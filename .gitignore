@@ -5,3 +5,8 @@ __pycache__
 .DS_Store
 .coverage
 replays
+*.zip
+build/
+_main.py
+__main.py
+*.json

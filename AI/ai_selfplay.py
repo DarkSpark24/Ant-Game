@@ -122,3 +122,7 @@ def policy(round_idx: int, my_seat: int, state: GameState) -> List[List[int]]:
     op = [1, g.position[0], g.position[1], int(d) + 1, 1]
     return [op, [8]]
 
+def ai_func(state: GameState) -> List[List[int]]:
+    """Adapter for controller-style API (single-state -> ops)."""
+    round_idx = getattr(state, "round", 0) + 1
+    return policy(round_idx, 0, state)

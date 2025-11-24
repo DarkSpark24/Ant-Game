@@ -28,3 +28,7 @@ def policy(round_idx: int, my_seat: int, state: GameState) -> list[list[int]]:
     num = 1
     return [move_army_op([x, y], d, num), [8]]
 
+def ai_func(state: GameState) -> list[list[int]]:
+    """Adapter to mirror controller-style API (single-state -> ops)."""
+    round_idx = getattr(state, "round", 0) + 1
+    return policy(round_idx, 0, state)

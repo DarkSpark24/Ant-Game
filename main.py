@@ -9,26 +9,37 @@ from logic.constant import *
 from logic.gamedata import Farmer, MainGenerals, SubGenerals, SuperWeapon, WeaponType
 from logic.gamestate import GameState, init_generals, update_round
 from logic.generate_round_replay import get_single_round_replay
+from logic.game_rules import is_game_over  # use canonical rule implementation
 
 error_map = ["RE", "TLE", "OLE"]
 
 
 # 发送数据包给 Judger
 def send_to_judger(data, target=-1):
-    length = len(data)
-    header = struct.pack(">Ii", length, target)
-    sys.stdout.buffer.write(header)
-    sys.stdout.buffer.write(data)
-    sys.stdout.flush()
+    try:
+        length = len(data)
+        # 逻辑发给 Judger 的头是 8 字节: length(4) + target(4)
+        header = struct.pack(">Ii", length, target)
+        sys.stdout.buffer.write(header)
+        sys.stdout.buffer.write(data)
+        sys.stdout.flush() # 【必须】立即刷新缓冲区
+    except Exception:
+        sys.stderr.write("IO Error in send_to_judger:\n")
+        sys.stderr.write(traceback.format_exc())
 
 
-# 接收judger发来的数据包
 def receive_from_judger():
-    header = sys.stdin.buffer.read(4)
-    length = struct.unpack(">I", header)[0]
-    data = sys.stdin.buffer.read(length)
-    sys.stdin.buffer.flush()
-    return data
+    try:
+        header = sys.stdin.buffer.read(4)
+        if len(header) < 4:
+            return b""
+        length = struct.unpack(">I", header)[0]
+        data = sys.stdin.buffer.read(length)
+        return data
+    except Exception:
+        sys.stderr.write("IO Error in receive_from_judger:\n")
+        sys.stderr.write(traceback.format_exc())
+        return b""
 
 
 # judger 向逻辑发送初始化信息
@@ -109,48 +120,7 @@ def send_game_end_info(end_info: str, end_state: str):
     send_to_judger(game_end_info_bytes)
 
 
-# 判断游戏是否结束
-def is_game_over(gamestate: GameState) -> int:
-    is_general0_alive, is_general1_alive = 0, 0
-    for general in gamestate.generals:
-        if isinstance(general, MainGenerals):
-            if general.player == 0:
-                is_general0_alive = 1
-            elif general.player == 1:
-                is_general1_alive = 1
-    if is_general1_alive == 0:
-        return 0
-    elif is_general0_alive == 0:
-        return 1
-    else:
-        if gamestate.round <= 500:
-            return -1
-    if gamestate.round > 500:
-        army0_num, army1_num = 0, 0
-        cell0_num, cell1_num = 0, 0
-        for i in range(row):
-            for j in range(col):
-                if gamestate.board[i][j].player == 0:
-                    army0_num += gamestate.board[i][j].army
-                    cell0_num += 1
-                elif gamestate.board[i][j].player == 1:
-                    army1_num += gamestate.board[i][j].army
-                    cell1_num += 1
-        if army0_num > army1_num:
-            return 0
-        elif army1_num > army0_num:
-            return 1
-        else:
-            if cell0_num > cell1_num:
-                return 0
-            elif cell1_num > cell0_num:
-                return 1
-            else:
-                if gamestate.coin[0] > gamestate.coin[1]:
-                    return 0
-                elif gamestate.coin[1] > gamestate.coin[0]:
-                    return 1
-        return 0
+# 判断游戏是否结束：改为使用 logic.game_rules.is_game_over（保持与核心规则一致）
 
 
 def convert_command_list_str(command_list_str: str):
@@ -167,7 +137,6 @@ def convert_command_list_str(command_list_str: str):
 def quit_running(er):
     with open(gamestate.replay_file, "a") as f:
         f.write(er + "\n")
-    f.close()
     end_state = json.dumps(["IA", "IA"])
     end_info = {"0": 0, "1": 0}
     send_game_end_info(json.dumps(end_info), end_state)
@@ -176,7 +145,6 @@ def quit_running(er):
 def write_debug_into_replay(gamestate, message):
     with open(gamestate.replay_file, "a") as f:
         f.write(message + "\n")
-    f.close()
 
 
 def write_end_info(gamestate):
@@ -191,7 +159,6 @@ def write_end_info(gamestate):
             ).replace("'", '"')
             + "\n"
         )
-    f.close()
 
 
 def read_human_information_and_apply(gamestate: GameState, player, enemy_human):
@@ -550,11 +517,15 @@ def read_ai_information_and_apply(gamestate: GameState, player, enemy_human):
 
 
 if __name__ == "__main__":
-    import traceback
-
-    from logic.gamedata import CellType
-
     try:
+        from logic.ai2logic import execute_single_command
+        from logic.constant import *
+        from logic.gamedata import Farmer, MainGenerals, SubGenerals, SuperWeapon, WeaponType, CellType
+        from logic.gamestate import GameState, init_generals, update_round
+        from logic.generate_round_replay import get_single_round_replay
+        from logic.game_rules import is_game_over
+        from logic.gamedata import CellType
+
         # constant.mountain_persent = random.uniform(0.05, 0.1)
         # constant.bog_percent = random.uniform(0.05, 0.25)
         gamestate = GameState()  # 每局游戏唯一的游戏状态类，所有的修改应该在此对象中进行
@@ -653,7 +624,42 @@ if __name__ == "__main__":
                     [],
                 )
     except Exception as e:
-        errorFile = open(gamestate.replay_file, "a")
-        errorFile.write(traceback.format_exc())
-        errorFile.close()
-        quit_running("")
+        # 【修复后的异常处理】
+        
+        # 1. 将详细报错打印到 标准错误输出 (stderr)
+        # 评测机通常会把 stderr 的内容显示在另外的日志里，这是最保险的
+        sys.stderr.write("!!! Logic Process Crashed !!!\n")
+        sys.stderr.write(traceback.format_exc())
+        sys.stderr.flush()
+
+        # 2. 尝试写入回放文件（如果路径已获取）
+        try:
+            if gamestate and hasattr(gamestate, 'replay_file') and gamestate.replay_file:
+                with open(gamestate.replay_file, "a") as f:
+                    f.write("\n--- Critical Error ---\n")
+                    f.write(traceback.format_exc())
+        except:
+            # 如果连写文件都失败了，就只依赖 stderr
+            pass
+        
+        # 3. 尝试按照协议通知 Judger 发生了错误 (防止 Judger 等待超时)
+        # 构造一个合法的结束包，防止评测机报空
+        try:
+            # 这里的格式必须严格符合 judger 对 logic 的结束要求
+            # 如果前面没能初始化，发送这个可能也没用，但值得一试
+            end_info = {"0": 0, "1": 0} 
+            end_state = json.dumps(["RE", "RE"]) # RE = Runtime Error
+            
+            # 手动构建包发送，避免依赖可能损坏的函数
+            msg = json.dumps({
+                "state": -1, 
+                "end_info": json.dumps(end_info), 
+                "end_state": end_state
+            }).encode("utf-8")
+            
+            header = struct.pack(">Ii", len(msg), -1)
+            sys.stdout.buffer.write(header)
+            sys.stdout.buffer.write(msg)
+            sys.stdout.flush()
+        except:
+            pass

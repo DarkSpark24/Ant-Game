@@ -58,3 +58,11 @@ def policy(round_idx: int, my_seat: int, state: GameState) -> list[list[int]]:
     ops.append([8])
     return ops
 
+def ai_func(state: GameState) -> list[list[int]]:
+    """
+    Lightweight adapter for controller-style callers.
+    Maps a GameState to a list of commands, ending with [8].
+    Assumes acting as player 0 and uses state's current round if available.
+    """
+    round_idx = getattr(state, "round", 0) + 1
+    return policy(round_idx, 0, state)
