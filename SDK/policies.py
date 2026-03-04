@@ -19,24 +19,30 @@ class PolicyConfig:
     hidden: int = 256
 
 
-class SmallPolicy(nn.Module):  # type: ignore[misc]
-    """Policy over action types and parameters.
-    Outputs: type_logits (9), x_logits (row), y_logits (col), dir_logits (4), num_logits (5), gid_logits (10)
-    """
+if nn is None:
+    class SmallPolicy:  # type: ignore[override]
+        def __init__(self, cfg: PolicyConfig):
+            del cfg
+            raise RuntimeError("PyTorch not installed. Please install torch to use SDK.policies.SmallPolicy.")
+else:
+    class SmallPolicy(nn.Module):  # type: ignore[misc]
+        """Policy over action types and parameters.
+        Outputs: type_logits (9), x_logits (row), y_logits (col), dir_logits (4), num_logits (5), gid_logits (10)
+        """
 
-    def __init__(self, cfg: PolicyConfig):
-        super().__init__()
-        inp = row * col * 4 + 2 + 2 + 1
-        self.net = nn.Sequential(
-            nn.Linear(inp, cfg.hidden),
-            nn.ReLU(),
-            nn.Linear(cfg.hidden, cfg.hidden),
-            nn.ReLU(),
-            nn.Linear(cfg.hidden, 9 + row + col + 4 + 5 + 10),
-        )
+        def __init__(self, cfg: PolicyConfig):
+            super().__init__()
+            inp = row * col * 4 + 2 + 2 + 1
+            self.net = nn.Sequential(
+                nn.Linear(inp, cfg.hidden),
+                nn.ReLU(),
+                nn.Linear(cfg.hidden, cfg.hidden),
+                nn.ReLU(),
+                nn.Linear(cfg.hidden, 9 + row + col + 4 + 5 + 10),
+            )
 
-    def forward(self, x):
-        return self.net(x)
+        def forward(self, x):
+            return self.net(x)
 
 
 def obs_to_tensor(obs) -> np.ndarray:
@@ -172,5 +178,6 @@ def logits_to_action(logits, obs):
 
 
 def make_optimizer(policy: SmallPolicy, cfg: PolicyConfig):
+    if optim is None:
+        raise RuntimeError("PyTorch not installed. Please install torch to create an optimizer.")
     return optim.Adam(policy.parameters(), lr=cfg.lr)
-

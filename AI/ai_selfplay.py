@@ -22,6 +22,7 @@ except Exception:  # pragma: no cover
 
 import numpy as np
 
+from SDK.policies import obs_to_tensor as sdk_obs_to_tensor
 from logic.constant import row, col
 from logic.map import PLAYER_0_BASE_CAMP, PLAYER_1_BASE_CAMP
 from logic.gamedata import Direction
@@ -29,19 +30,25 @@ from logic.gamestate import GameState
 
 
 MODEL_PATH = os.environ.get("SELFPLAY_MODEL", os.path.join("AI", "selfplay", "model.pt"))
+MAX_ARMY_OBS = 10000
 
 
-class SmallPolicy(nn.Module):  # type: ignore[misc]
-    def __init__(self):
-        super().__init__()
-        inp = row * col * 4 + 2 + 2 + 1
-        hid = 256
-        self.net = nn.Sequential(
-            nn.Linear(inp, hid), nn.ReLU(), nn.Linear(hid, hid), nn.ReLU(), nn.Linear(hid, 9 + row + col + 4 + 5 + 10)
-        )
+if nn is None:
+    class SmallPolicy:  # type: ignore[override]
+        def __init__(self):
+            raise RuntimeError("PyTorch not installed. Please install torch to load the self-play policy model.")
+else:
+    class SmallPolicy(nn.Module):  # type: ignore[misc]
+        def __init__(self):
+            super().__init__()
+            inp = row * col * 4 + 2 + 2 + 1
+            hid = 256
+            self.net = nn.Sequential(
+                nn.Linear(inp, hid), nn.ReLU(), nn.Linear(hid, hid), nn.ReLU(), nn.Linear(hid, 9 + row + col + 4 + 5 + 10)
+            )
 
-    def forward(self, x):
-        return self.net(x)
+        def forward(self, x):
+            return self.net(x)
 
 
 def _build_obs(state: GameState, player: int):
@@ -53,7 +60,7 @@ def _build_obs(state: GameState, player: int):
         for j in range(col):
             cell = state.board[i][j]
             owner[i, j] = cell.player
-            army[i, j] = cell.army
+            army[i, j] = min(cell.army, MAX_ARMY_OBS)
             terrain[i, j] = int(cell.type)
             if cell.generals is not None:
                 generals_owner[i, j] = cell.generals.player
@@ -69,17 +76,7 @@ def _build_obs(state: GameState, player: int):
 
 
 def _obs_to_tensor(obs) -> np.ndarray:
-    owner = obs["board_owner"].astype(np.float32)
-    army = np.log1p(obs["board_army"].astype(np.float32))
-    terrain = obs["board_terrain"].astype(np.float32) / 2.0
-    gens = (obs["generals_owner"].astype(np.float32) + 1.0) / 2.0
-    coins = obs["coins"].astype(np.float32) / 100.0
-    rest = obs["rest_moves"].astype(np.float32) / 5.0
-    cur = np.array([obs["current_player"]], dtype=np.float32)
-    feat = np.concatenate(
-        [owner.reshape(-1), army.reshape(-1), terrain.reshape(-1), gens.reshape(-1), coins, rest, cur]
-    )
-    return feat
+    return sdk_obs_to_tensor(obs)
 
 
 def _pick_action(policy: SmallPolicy, obs) -> np.ndarray:
