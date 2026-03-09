@@ -12,12 +12,12 @@ try:
 except ModuleNotFoundError as exc:
     if exc.name != "protocol":
         raise
-from AI.protocol import ProtocolIO
+    from AI.protocol import ProtocolIO
 
-from SDK.constants import OperationType as SDKOperationType
+from SDK.utils.constants import OperationType as SDKOperationType
 from SDK.backend.forecast import ForecastOperation as Operation, ForecastState as GameInfo, build_forecast_state
 from SDK.backend.runtime import MatchRuntime
-from SDK.model import Operation as SDKOperation
+from SDK.backend.model import Operation as SDKOperation
 
 
 def _to_sdk_operation(operation: Operation) -> SDKOperation:

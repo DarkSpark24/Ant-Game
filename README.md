@@ -1,5 +1,12 @@
 # 2025-2026 第三十届智能体大赛 蚁洋陷役2
 
+## 代码入口
+
+- 后端规则入口：`SDK/backend/`
+- 训练入口：`SDK/training/`
+- 对外训练脚本：`SDK/train_mcts.py`、`SDK/train_mcts.sh`、`SDK/train_example.py`、`SDK/train_example.sh`
+- AI 示例入口：`AI/ai_example.py`
+
 ## 一、游戏规则简介
 
 ​	这是一款双人在六边形网格地图上对抗的策略游戏，双方玩家分别操控己方基地，通过每回合自动生成并派遣蚂蚁进攻敌方基地，同时可以消耗金币建造、升级或降级多种类型的防御塔来防守和干扰敌人，也能使用四种具有不同持续效果和冷却时间的超级武器（如闪电风暴、EMP轰炸、引力护盾和紧急回避）来改变局部战局。
@@ -421,4 +428,89 @@ def init_pheromon(M):
 - 当前蚂蚁种类：蚂蚁一共有5种状态，对应 0-4
 
 ### 6. SDK使用方法介绍
-见代码仓库中的SDK文档
+
+本仓库把“规则逻辑”“策略逻辑”“训练脚手架”拆成了三层：
+
+- `SDK/backend/`：唯一的 Python 后端实现，负责游戏状态、规则推进、公共状态同步。
+- `SDK/training/`：训练环境与训练基类，负责 self-play、观测、动作空间和训练循环。
+- `AI/`：选手自己的策略代码，只负责根据当前状态选择动作，不应重复实现游戏规则。
+
+#### 6.1 编写一个 AI
+
+最简单的入口可以参考 [AI/ai_example.py](./AI/ai_example.py)。
+
+你需要实现 `AI.choose_bundle()`，根据当前状态和候选动作选择一个 `ActionBundle`。
+
+```python
+from SDK.backend import BackendState
+from SDK.utils.actions import ActionBundle
+
+class AI(...):
+    def choose_bundle(
+        self,
+        state: BackendState,
+        player: int,
+        bundles: list[ActionBundle] | None = None,
+    ) -> ActionBundle:
+        ...
+```
+
+推荐遵循下面的分工：
+
+- 规则、合法性判断、回合推进：交给 `SDK.backend`
+- 候选动作生成：交给 `SDK.utils.actions.ActionCatalog`
+- 你的策略、打分、搜索：写在 `AI/*.py`
+
+不要在 `AI/` 里再实现一套自己的游戏规则，否则很容易和评测逻辑不一致。
+
+#### 6.2 AI 入口与打包
+
+评测时统一入口是 [AI/main.py](./AI/main.py)。它只负责协议通信，并从打包后的 `ai.py` 中导入 `AI` 类。
+
+当前仓库提供了这些打包脚本：
+
+- [AI/zip_rand.sh](./AI/zip_rand.sh)
+- [AI/zip_mcts.sh](./AI/zip_mcts.sh)
+- [AI/zip_greedy.sh](./AI/zip_greedy.sh)
+- [AI/zip_example.sh](./AI/zip_example.sh)
+
+例如，打包 example AI：
+
+```bash
+bash AI/zip_example.sh
+```
+
+打包后的目录约定是：
+
+- `main.py`：统一通信入口
+- `ai.py`：当前参赛 AI 的公开入口
+- `SDK/`：运行时依赖
+- `tools/`：必要辅助脚本
+
+如果你要新增自己的 AI，建议直接仿照 `AI/ai_example.py` 新建一个 `AI/ai_xxx.py`，再为它补一个对应的 `zip_xxx.sh`。
+
+#### 6.3 训练脚本入口
+
+SDK 根目录下公开了两个训练示例：
+
+- [SDK/train_example.py](./SDK/train_example.py) / [SDK/train_example.sh](./SDK/train_example.sh)
+- [SDK/train_mcts.py](./SDK/train_mcts.py) / [SDK/train_mcts.sh](./SDK/train_mcts.sh)
+
+其中：
+
+- `train_example`：最小示例，展示如何从 `SDK.backend` 和 `SDK.training` 接入框架
+- `train_mcts`：MCTS 自对弈脚手架，展示如何收集对局并在后续加入参数更新逻辑
+
+运行示例：
+
+```bash
+bash SDK/train_example.sh --seed 1 --max-actions 16
+bash SDK/train_mcts.sh --episodes 2 --iterations 24 --max-depth 3 --seed 1
+```
+
+参考实现：
+
+- 训练状态、环境、规则推进：使用 `SDK.backend` 和 `SDK.training`
+- 特征、动作枚举等通用辅助：使用 `SDK.utils`
+- 模型更新、损失函数、采样策略：写在你自己的训练脚本里
+- AI 的决策逻辑：写在 `AI/` 中

@@ -5,9 +5,9 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from SDK import native_antwar
-from SDK.constants import AntStatus, OperationType, SuperWeaponType, TowerType
-from SDK.engine import GameState, PublicRoundState, TurnResolution
-from SDK.model import Ant, Base, Operation, Tower, WeaponEffect
+from SDK.utils.constants import AntStatus, OperationType, SuperWeaponType, TowerType
+from SDK.backend.engine import GameState, PublicRoundState, TurnResolution
+from SDK.backend.model import Ant, Base, Operation, Tower, WeaponEffect
 
 
 def _to_native_operation(operation: Operation) -> native_antwar.Operation:

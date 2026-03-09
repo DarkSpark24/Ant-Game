@@ -5,8 +5,8 @@ from typing import Iterable
 
 from SDK.backend.core import EngineBackend, load_backend
 from SDK.backend.state import BackendState
-from SDK.engine import PublicRoundState
-from SDK.model import Operation
+from SDK.backend.engine import PublicRoundState
+from SDK.backend.model import Operation
 
 
 @dataclass(slots=True)

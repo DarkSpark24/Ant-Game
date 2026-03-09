@@ -16,7 +16,7 @@ def test_ai_example_can_choose_operations() -> None:
 
 def test_train_example_script_runs() -> None:
     completed = subprocess.run(
-        [sys.executable, "tools/train_example.py", "--seed", "2", "--max-actions", "16"],
+        [sys.executable, "SDK/train_example.py", "--seed", "2", "--max-actions", "16"],
         check=True,
         capture_output=True,
         text=True,
@@ -25,11 +25,21 @@ def test_train_example_script_runs() -> None:
     assert "SDK.backend" in completed.stdout
 
 
+def test_train_example_shell_runs() -> None:
+    completed = subprocess.run(
+        ["bash", "SDK/train_example.sh", "--seed", "2", "--max-actions", "16"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "training_entrypoint" in completed.stdout
+
+
 def test_train_mcts_script_runs_short_scaffold() -> None:
     completed = subprocess.run(
         [
             sys.executable,
-            "tools/train_mcts.py",
+            "SDK/train_mcts.py",
             "--episodes",
             "1",
             "--iterations",
@@ -47,3 +57,26 @@ def test_train_mcts_script_runs_short_scaffold() -> None:
     )
     assert '"episodes": 1' in completed.stdout
     assert "update_from_episodes" in completed.stdout
+
+
+def test_train_mcts_shell_runs_short_scaffold() -> None:
+    completed = subprocess.run(
+        [
+            "bash",
+            "SDK/train_mcts.sh",
+            "--episodes",
+            "1",
+            "--iterations",
+            "2",
+            "--max-depth",
+            "1",
+            "--max-rounds",
+            "2",
+            "--seed",
+            "3",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert '"episodes": 1' in completed.stdout

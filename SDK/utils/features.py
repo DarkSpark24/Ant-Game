@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from SDK.constants import (
+from SDK.utils.constants import (
     AntBehavior,
     HIGHLAND_CELLS,
     MAP_PROPERTY,
@@ -17,7 +17,7 @@ from SDK.constants import (
     SuperWeaponType,
     SUPER_WEAPON_STATS,
 )
-from SDK.geometry import hex_distance
+from SDK.utils.geometry import hex_distance
 from SDK.backend.state import BackendState
 
 

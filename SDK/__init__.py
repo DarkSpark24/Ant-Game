@@ -1,4 +1,3 @@
-from SDK.actions import ActionBundle, ActionCatalog
 from SDK.backend import (
     BackendState,
     ForecastOperation,
@@ -10,7 +9,8 @@ from SDK.backend import (
     build_forecast_state,
     create_python_backend_state,
 )
-from SDK.features import FeatureExtractor
+from SDK.utils.actions import ActionBundle, ActionCatalog
+from SDK.utils.features import FeatureExtractor
 
 __all__ = [
     "ActionBundle",

@@ -4,11 +4,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import random
 
-from SDK.actions import ActionBundle, ActionCatalog
+from SDK.utils.actions import ActionBundle, ActionCatalog
 from SDK.backend.state import BackendState
-from SDK.constants import MAX_ACTIONS
-from SDK.features import FeatureExtractor
-from SDK.model import Operation
+from SDK.utils.constants import MAX_ACTIONS
+from SDK.utils.features import FeatureExtractor
+from SDK.backend.model import Operation
 
 
 @dataclass(slots=True)

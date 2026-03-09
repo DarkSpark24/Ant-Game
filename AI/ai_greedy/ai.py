@@ -7,7 +7,7 @@ import sys
 import time
 from typing import List, Optional, Sequence, Tuple
 
-from SDK.forecast_backend import (
+from SDK.backend.forecast import (
     MAX_ROUND,
     MAP_PROPERTY,
     Ant,

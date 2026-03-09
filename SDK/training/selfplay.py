@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from SDK.features import FeatureExtractor
+from SDK.utils.features import FeatureExtractor
 from SDK.training.base import BaseSelfPlayTrainer, EpisodeBatch
 from SDK.training.policies import MaskedLinearPolicy
 

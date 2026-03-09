@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from SDK.constants import (
+from SDK.utils.constants import (
     MAX_ACTIONS,
     OperationType,
     PLAYER_BASES,
@@ -14,10 +14,10 @@ from SDK.constants import (
     TOWER_UPGRADE_TREE,
     TowerType,
 )
-from SDK.features import FeatureExtractor
-from SDK.geometry import hex_distance
+from SDK.utils.features import FeatureExtractor
+from SDK.utils.geometry import hex_distance
 from SDK.backend.state import BackendState
-from SDK.model import Operation, Tower
+from SDK.backend.model import Operation, Tower
 
 
 @dataclass(slots=True)

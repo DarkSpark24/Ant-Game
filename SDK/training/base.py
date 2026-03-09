@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from SDK.features import FeatureExtractor
+from SDK.utils.features import FeatureExtractor
 from SDK.training.env import AntWarParallelEnv
 
 

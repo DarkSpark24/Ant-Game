@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterator
 
-from SDK.constants import MAP_PROPERTY, MAP_SIZE, OFFSET, Terrain
+from SDK.utils.constants import MAP_PROPERTY, MAP_SIZE, OFFSET, Terrain
 
 
 def is_valid_pos(x: int, y: int) -> bool:

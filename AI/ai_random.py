@@ -5,9 +5,9 @@ try:
 except ModuleNotFoundError as exc:
     if exc.name != "common":
         raise
-from AI.common import BaseAgent
+    from AI.common import BaseAgent
 
-from SDK.actions import ActionBundle
+from SDK.utils.actions import ActionBundle
 from SDK.backend.state import BackendState
 
 

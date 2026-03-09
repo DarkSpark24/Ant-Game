@@ -10,9 +10,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from AI.ai_example import AI as ExampleAgent
-from SDK.actions import ActionCatalog
 from SDK.backend import create_python_backend_state
 from SDK.training import AntWarParallelEnv
+from SDK.utils.actions import ActionCatalog
 
 
 class ExampleTrainerGuide:

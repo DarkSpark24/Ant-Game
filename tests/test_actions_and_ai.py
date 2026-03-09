@@ -5,12 +5,12 @@ from pathlib import Path
 from AI.ai_greedy import AI as GreedyAI, _to_greedy_info, _to_sdk_operation
 from AI.ai_mcts import MCTSAgent
 from AI.ai_random import RandomAgent
-from SDK.actions import ActionCatalog
+from SDK.utils.actions import ActionCatalog
 from SDK.backend import load_backend
-from SDK.constants import OperationType
-from SDK.engine import GameState
-from SDK.forecast_backend import Ant as ForecastAnt, AntState as ForecastAntState, ForecastState
-from SDK.model import Ant
+from SDK.utils.constants import OperationType
+from SDK.backend.engine import GameState
+from SDK.backend.forecast import Ant as ForecastAnt, AntState as ForecastAntState, ForecastState
+from SDK.backend.model import Ant
 
 
 def test_action_catalog_returns_legal_bundles() -> None:

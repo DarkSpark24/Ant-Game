@@ -71,6 +71,28 @@ import main
     )
 
 
+def _assert_packaged_ai_imports_in_isolated_layout(package_root: Path) -> None:
+    script = """
+import importlib.util
+import sys
+from pathlib import Path
+
+package_root = Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("packaged_ai", package_root / "ai.py")
+assert spec is not None and spec.loader is not None
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+assert hasattr(module, "AI")
+"""
+    subprocess.run(
+        [sys.executable, "-c", script, str(package_root)],
+        check=True,
+        cwd=package_root,
+        env={"PYTHONPATH": str(package_root)},
+    )
+
+
 def test_zip_rand_creates_runnable_layout(tmp_path: Path) -> None:
     package_root = tmp_path / "random-package"
     returned_path = _run_packaging_script("zip_rand.sh", package_root)
@@ -82,6 +104,7 @@ def test_zip_rand_creates_runnable_layout(tmp_path: Path) -> None:
         assert hasattr(module, "AI")
     finally:
         sys.path.remove(str(package_root))
+    _assert_packaged_ai_imports_in_isolated_layout(package_root)
 
 
 def test_zip_mcts_and_zip_greedy_include_expected_support_files(tmp_path: Path) -> None:
@@ -94,6 +117,9 @@ def test_zip_mcts_and_zip_greedy_include_expected_support_files(tmp_path: Path) 
     _assert_packaged_layout(mcts_root)
     _assert_packaged_layout(greedy_root)
     _assert_packaged_layout(example_root)
+    _assert_packaged_ai_imports_in_isolated_layout(mcts_root)
+    _assert_packaged_ai_imports_in_isolated_layout(greedy_root)
+    _assert_packaged_ai_imports_in_isolated_layout(example_root)
     assert not (mcts_root / "ai_greedy.py").exists()
     assert not (mcts_root / "AI" / "ai_greedy").exists()
     assert (greedy_root / "ai_greedy" / "ai.py").exists()
@@ -179,6 +205,6 @@ def test_checked_in_ai_archives_bundle_current_sdk_engine() -> None:
     assert archives
     for archive_path in archives:
         with zipfile.ZipFile(archive_path) as archive:
-            engine_source = archive.read("SDK/engine.py").decode("utf-8", errors="replace")
+            engine_source = archive.read("SDK/backend/engine.py").decode("utf-8", errors="replace")
         assert "ant.record_move(direction)" in engine_source
         assert "ant.path.append(direction)" not in engine_source

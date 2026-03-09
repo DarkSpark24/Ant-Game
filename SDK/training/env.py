@@ -6,10 +6,10 @@ import numpy as np
 from gymnasium import spaces
 from pettingzoo import ParallelEnv
 
-from SDK.actions import ActionCatalog
+from SDK.utils.actions import ActionCatalog
 from SDK.backend.core import EngineBackend, load_backend
 from SDK.backend.state import BackendState, create_python_backend_state
-from SDK.features import FeatureExtractor
+from SDK.utils.features import FeatureExtractor
 
 
 class AntWarParallelEnv(ParallelEnv):

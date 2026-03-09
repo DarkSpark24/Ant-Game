@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from SDK.constants import LAMBDA_DENOM, LAMBDA_NUM, PHEROMONE_FAIL_BONUS_INT, TAU_BASE_ADD_INT
-from SDK.constants import ANT_TELEPORT_INTERVAL, AntBehavior, AntStatus, OperationType, SuperWeaponType, TowerType
-from SDK.engine import GameState, PublicRoundState
-from SDK.model import Ant, Operation, Tower, WeaponEffect
+from SDK.utils.constants import LAMBDA_DENOM, LAMBDA_NUM, PHEROMONE_FAIL_BONUS_INT, TAU_BASE_ADD_INT
+from SDK.utils.constants import ANT_TELEPORT_INTERVAL, AntBehavior, AntStatus, OperationType, SuperWeaponType, TowerType
+from SDK.backend.engine import GameState, PublicRoundState
+from SDK.backend.model import Ant, Operation, Tower, WeaponEffect
 
 
 def test_initial_round_spawns_ants_and_advances_time() -> None:
@@ -40,7 +40,7 @@ def test_quick_tower_attacks_enemy_ant() -> None:
 
 def test_emp_prevents_building_inside_field() -> None:
     state = GameState.initial(seed=1)
-    state.active_effects.append(__import__('SDK.model', fromlist=['WeaponEffect']).WeaponEffect(__import__('SDK.constants', fromlist=['SuperWeaponType']).SuperWeaponType.EMP_BLASTER, 1, 6, 9, 3))
+    state.active_effects.append(__import__('SDK.backend.model', fromlist=['WeaponEffect']).WeaponEffect(__import__('SDK.utils.constants', fromlist=['SuperWeaponType']).SuperWeaponType.EMP_BLASTER, 1, 6, 9, 3))
     blocked = Operation(OperationType.BUILD_TOWER, 6, 9)
     assert not state.can_apply_operation(0, blocked)
 

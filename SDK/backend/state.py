@@ -4,8 +4,8 @@ from typing import Iterable, Protocol, runtime_checkable
 
 import numpy as np
 
-from SDK.engine import GameState, PublicRoundState, TurnResolution
-from SDK.model import Ant, Base, Operation, Tower, WeaponEffect
+from SDK.backend.engine import GameState, PublicRoundState, TurnResolution
+from SDK.backend.model import Ant, Base, Operation, Tower, WeaponEffect
 
 
 @runtime_checkable

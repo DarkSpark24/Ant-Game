@@ -7,7 +7,7 @@ except ModuleNotFoundError as exc:
         raise
     from AI.common import BaseAgent
 
-from SDK.actions import ActionBundle
+from SDK.utils.actions import ActionBundle
 from SDK.backend import BackendState
 
 

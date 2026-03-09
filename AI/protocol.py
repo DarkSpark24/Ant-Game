@@ -14,8 +14,8 @@ except ModuleNotFoundError as exc:
 
 from SDK.backend.engine import PublicRoundState
 from SDK.backend.runtime import MatchRuntime
-from SDK.model import Operation
-from SDK.constants import OperationType
+from SDK.backend.model import Operation
+from SDK.utils.constants import OperationType
 
 
 @dataclass(slots=True)

@@ -4,9 +4,9 @@ import io
 import struct
 
 from AI.protocol import ProtocolIO
-from SDK.model import Operation
+from SDK.backend.model import Operation
 from SDK.training import AntWarParallelEnv
-from SDK.constants import OperationType
+from SDK.utils.constants import OperationType
 
 
 def test_env_reset_and_step() -> None:
