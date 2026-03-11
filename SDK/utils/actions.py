@@ -242,6 +242,12 @@ class ActionCatalog:
             return local_density * 0.9 + 4.0
         if tower_type == TowerType.SNIPER:
             return max(0.0, 18 - forward_distance) + local_density * 0.4
+        if tower_type in (TowerType.PRODUCER, TowerType.PRODUCER_FAST):
+            return max(0.0, 10 - local_density) + max(0.0, 16 - forward_distance) * 0.35
+        if tower_type == TowerType.PRODUCER_SIEGE:
+            return max(0.0, 12 - local_density) + max(0.0, 14 - forward_distance) * 0.45
+        if tower_type == TowerType.PRODUCER_MEDIC:
+            return max(0.0, 8 - local_density) + max(0.0, 12 - forward_distance) * 0.3 + 2.0
         return 0.0
 
     def _storm_value(self, state: BackendState, player: int, x: int, y: int) -> float:

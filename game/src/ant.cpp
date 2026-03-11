@@ -1,12 +1,15 @@
 #include "../include/ant.h"
 #include "../include/map.h"
 
+#include <algorithm>
 #include <cassert>
 // Create an ant.
 
 const int hp_list[3] = {10, 25, 50};
 namespace {
 constexpr int SPECIAL_BEHAVIOR_DECAY_TURNS = 5;
+constexpr int WORKER_TOWER_ATTACK_DAMAGE[3] = {1, 2, 4};
+constexpr int COMBAT_TOWER_ATTACK_DAMAGE = 3;
 
 int default_behavior_expiry(Ant::Behavior behavior) {
     switch (behavior) {
@@ -20,7 +23,7 @@ int default_behavior_expiry(Ant::Behavior behavior) {
 }
 } // namespace
 
-Ant::Ant(int player, int id, int x, int y, int level)
+Ant::Ant(int player, int id, int x, int y, int level, Kind kind)
     : player(player),
       id(id),             // Set player and id (may be generated automatically?)
       pos_x(x), pos_y(y), // Set initial position
@@ -32,6 +35,7 @@ Ant::Ant(int player, int id, int x, int y, int level)
       last_move(NoMove),
       path_len_total(0),
       shield(0),
+      evasion_control_free_on_break(false),
       defend(false),
       is_frozen(false),
       all_frozen(false),
@@ -39,13 +43,16 @@ Ant::Ant(int player, int id, int x, int y, int level)
       invincible(false),
       evasion(false),
       behavior(Behavior::Default),
+      kind(kind),
       behavior_rounds(0),
       behavior_expiry(0),
       target_x(-1),
       target_y(-1),
       has_pending_behavior(false),
       pending_behavior(Behavior::Default)
-{}
+{
+    update_move_weights();
+}
 
 // Get the player to which the ant belong.
 int Ant::get_player() const { return player; }
@@ -78,7 +85,17 @@ const std::vector<Pos> &Ant::get_trail_cells() const { return trail_cells; }
 
 Ant::Behavior Ant::get_behavior() const { return behavior; }
 
+Ant::Kind Ant::get_kind() const { return kind; }
+
 bool Ant::is_control_immune() const { return behavior == Behavior::ControlFree; }
+
+bool Ant::is_combat_ant() const { return kind == Kind::Combat; }
+
+int Ant::get_tower_attack_damage() const {
+    if (kind == Kind::Combat)
+        return COMBAT_TOWER_ATTACK_DAMAGE;
+    return WORKER_TOWER_ATTACK_DAMAGE[level];
+}
 
 void Ant::increase_age() { age++; }
 
@@ -99,6 +116,29 @@ void Ant::set_behavior(Behavior new_behavior, bool reset_rounds,
     }
 }
 
+void Ant::update_move_weights() {
+    if (kind == Kind::Combat) {
+        move_weights.progress = 0.7;
+        move_weights.pheromone = 0.1;
+        move_weights.crowding = 0.25;
+        move_weights.expected_damage = 0.8;
+        move_weights.control_risk = 0.35;
+        move_weights.tower_pull = 1.35;
+        return;
+    }
+    move_weights.progress = 1.0;
+    move_weights.pheromone = 0.3;
+    move_weights.crowding = 0.35;
+    move_weights.expected_damage = 1.15;
+    move_weights.control_risk = 0.85;
+    move_weights.tower_pull = 0.0;
+}
+
+void Ant::set_kind(Kind new_kind) {
+    kind = new_kind;
+    update_move_weights();
+}
+
 void Ant::set_bewitch_target(int x, int y) {
     target_x = x;
     target_y = y;
@@ -112,6 +152,17 @@ void Ant::set_pending_behavior_to(Behavior new_behavior) {
 }
 
 void Ant::clear_pending_behavior() { has_pending_behavior = false; }
+
+void Ant::grant_evasion(int stacks, bool grant_control_free_on_deplete) {
+    if (stacks <= 0)
+        return;
+    shield = std::max(shield, stacks);
+    evasion = shield > 0;
+    evasion_control_free_on_break =
+        evasion_control_free_on_break || grant_control_free_on_deplete;
+}
+
+void Ant::reset_backtrack() { last_move = NoMove; }
 
 // Get the status of the ant.
 Ant::Status Ant::get_status() const {
@@ -133,9 +184,15 @@ Ant::Status Ant::get_status() const {
 void Ant::set_hp_true(int change) { hp += change; }
 // Change HP
 void Ant::set_hp(int change) {
-    if (shield > 0) {
+    if (change < 0 && shield > 0) {
         change = 0;
         shield--;
+        evasion = shield > 0;
+        if (shield == 0 && evasion_control_free_on_break &&
+            !is_control_immune()) {
+            evasion_control_free_on_break = false;
+            set_behavior(Behavior::ControlFree);
+        }
     } else if (defend && change < 0 && (-change) * 2 < hp_limit) {
         change = 0;
     }

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from SDK import native_antwar
-from SDK.utils.constants import AntStatus, OperationType, SuperWeaponType, TowerType
+from SDK.utils.constants import AntBehavior, AntKind, AntStatus, OperationType, SuperWeaponType, TowerType
 from SDK.backend.engine import GameState, PublicRoundState, TurnResolution
 from SDK.backend.model import Ant, Base, Operation, Tower, WeaponEffect
 
@@ -43,13 +43,14 @@ def _sync_shadow_state(state: GameState, native: native_antwar.NativeState) -> N
             y=int(y),
             tower_type=TowerType(int(tower_type)),
             cooldown_clock=float(cooldown),
+            hp=int(hp),
         )
-        for tower_id, player, x, y, tower_type, cooldown in native.tower_rows()
+        for tower_id, player, x, y, tower_type, cooldown, hp in native.tower_rows()
     ]
 
     ant_map = {ant.ant_id: ant for ant in state.ants}
     synced_ants: list[Ant] = []
-    for ant_id, player, x, y, hp, level, age, status in native.ant_rows():
+    for ant_id, player, x, y, hp, level, age, status, behavior, kind in native.ant_rows():
         ant = ant_map.get(int(ant_id))
         if ant is None:
             ant = Ant(
@@ -59,6 +60,7 @@ def _sync_shadow_state(state: GameState, native: native_antwar.NativeState) -> N
                 y=int(y),
                 hp=int(hp),
                 level=int(level),
+                kind=AntKind(int(kind)),
                 age=int(age),
                 status=AntStatus(int(status)),
             )
@@ -69,6 +71,8 @@ def _sync_shadow_state(state: GameState, native: native_antwar.NativeState) -> N
         ant.level = int(level)
         ant.age = int(age)
         ant.status = AntStatus(int(status))
+        ant.behavior = AntBehavior(int(behavior))
+        ant.set_kind(AntKind(int(kind)))
         synced_ants.append(ant)
     state.ants = synced_ants
 

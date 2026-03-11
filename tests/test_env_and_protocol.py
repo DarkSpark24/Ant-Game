@@ -45,3 +45,24 @@ def test_protocol_send_and_receive_round_state() -> None:
     payload = stdout.getvalue()
     packet_len = struct.unpack(">I", payload[:4])[0]
     assert packet_len == len(payload[4:])
+
+
+def test_protocol_receives_optional_tower_hp_and_ant_kind_fields() -> None:
+    stdin = io.BytesIO(
+        b"0 7\n"
+        b"0\n"
+        b"1\n"
+        b"1\n"
+        b"0 0 6 9 0 1 7\n"
+        b"1\n"
+        b"0 0 2 9 10 0 0 0 0 1\n"
+        b"51 51\n"
+        b"50 50\n"
+    )
+    proto = ProtocolIO(stdin=stdin, stdout=io.BytesIO(), stderr=io.StringIO())
+    assert proto.recv_init() == (0, 7)
+    assert proto.recv_operations() == []
+    round_state = proto.recv_round_state()
+    assert round_state is not None
+    assert round_state.towers[0][-1] == 7
+    assert round_state.ants[0][-1] == 1

@@ -134,107 +134,126 @@ bool DefenseTower::upgrade_type_check(int new_type) const {
 TowerType DefenseTower::tower_downgrade_type() const {
     return TowerType(tower_type / 10);
 }
-// upgrade the tower
-bool DefenseTower::upgrade(TowerType tower_type_) {
-    round = 0;
-    level++;
-    tower_type = tower_type_;
-    switch (tower_type) {
-    case 1:
+
+void DefenseTower::set_stats_for_type(TowerType tower_type_) {
+    damage = 5;
+    spd = 2;
+    range = 2;
+    hp_limit = 10;
+    switch (tower_type_) {
+    case TowerType::Basic:
+        break;
+    case TowerType::Heavy:
         damage = 20;
         spd = 2;
         range = 2;
         break;
-    case 2:
+    case TowerType::Quick:
         damage = 6;
         spd = 1;
         range = 3;
         break;
-    case 3:
+    case TowerType::Mortar:
         damage = 16;
         spd = 4;
         range = 3;
         break;
-    case 11:
+    case TowerType::Producer:
+        damage = 0;
+        spd = 4;
+        range = 0;
+        break;
+    case TowerType::HeavyPlus:
         damage = 35;
         spd = 2;
         range = 3;
         break;
-    case 12:
+    case TowerType::Ice:
         damage = 15;
         spd = 2;
         range = 2;
         break;
-    case 13:
+    case TowerType::Cannon:
         damage = 10;
         spd = 3;
         range = 3;
         break;
-    case 21:
+    case TowerType::QuickPlus:
         damage = 8;
         spd = 0.5;
         range = 3;
         break;
-    case 22:
+    case TowerType::Double:
         damage = 7;
         spd = 1;
         range = 4;
         break;
-    case 23:
+    case TowerType::Sniper:
         damage = 15;
         spd = 2;
         range = 6;
         break;
-    case 31:
+    case TowerType::MortarPlus:
         damage = 35;
         spd = 4;
         range = 4;
         break;
-    case 32:
+    case TowerType::Pulse:
         damage = 12;
         spd = 3;
         range = 2;
         break;
-    case 33:
+    case TowerType::Missile:
         damage = 45;
         spd = 6;
         range = 5;
         break;
+    case TowerType::ProducerFast:
+        damage = 0;
+        spd = 2;
+        range = 0;
+        break;
+    case TowerType::ProducerSiege:
+        damage = 0;
+        spd = 4;
+        range = 0;
+        break;
+    case TowerType::ProducerMedic:
+        damage = 0;
+        spd = 4;
+        range = 4;
+        break;
     default:
         break;
     }
+}
+// upgrade the tower
+bool DefenseTower::upgrade(TowerType tower_type_) {
+    round = 0;
+    int previous_hp = hp;
+    int previous_hp_limit = hp_limit;
+    level++;
+    tower_type = tower_type_;
+    set_stats_for_type(tower_type);
+    hp = previous_hp_limit > 0
+             ? std::max(1, (previous_hp * hp_limit + previous_hp_limit - 1) /
+                               previous_hp_limit)
+             : hp_limit;
     return true;
 }
 
 // downgrade the tower
 bool DefenseTower::downgrade(TowerType tower_type_) {
     round = 0;
+    int previous_hp = hp;
+    int previous_hp_limit = hp_limit;
     level--;
     tower_type = tower_type_;
-    switch (tower_type) {
-    case 0:
-        damage = 5;
-        spd = 2;
-        range = 2;
-        break;
- case 1:
-        damage = 20;
-        spd = 2;
-        range = 2;
-        break;
-    case 2:
-        damage = 6;
-        spd = 1;
-        range = 3;
-        break;
-    case 3:
-        damage = 16;
-        spd = 4;
-        range = 3;
-        break;
-    default:
-        break;
-    }
+    set_stats_for_type(tower_type);
+    hp = previous_hp_limit > 0
+             ? std::max(1, (previous_hp * hp_limit + previous_hp_limit - 1) /
+                               previous_hp_limit)
+             : hp_limit;
     return true;
 }
 
@@ -275,4 +294,44 @@ void DefenseTower::set_unchanged_before_another_round() {
 
 void DefenseTower::add_attacked_ants(int id) {
     attacked_ants.push_back(id);
+}
+
+bool DefenseTower::is_producer() const {
+    return tower_type == TowerType::Producer ||
+           tower_type == TowerType::ProducerFast ||
+           tower_type == TowerType::ProducerSiege ||
+           tower_type == TowerType::ProducerMedic;
+}
+
+int DefenseTower::get_spawn_interval() const {
+    switch (tower_type) {
+    case TowerType::Producer:
+        return 4;
+    case TowerType::ProducerFast:
+        return 2;
+    case TowerType::ProducerSiege:
+    case TowerType::ProducerMedic:
+        return 4;
+    default:
+        return 0;
+    }
+}
+
+int DefenseTower::get_support_range() const {
+    return tower_type == TowerType::ProducerMedic ? 4 : 0;
+}
+
+double DefenseTower::get_siege_spawn_chance() const {
+    return tower_type == TowerType::ProducerSiege ? 0.25 : 0.0;
+}
+
+int DefenseTower::get_heal_amount() const {
+    return tower_type == TowerType::ProducerMedic ? 4 : 0;
+}
+
+bool DefenseTower::take_damage(int amount) {
+    if (amount <= 0)
+        return false;
+    hp -= amount;
+    return hp <= 0;
 }

@@ -7,6 +7,7 @@ from typing import Iterable
 import numpy as np
 
 from SDK.utils.constants import (
+    AntKind,
     AntBehavior,
     ANT_TELEPORT_INTERVAL,
     ANT_TELEPORT_RATIO,
@@ -34,10 +35,14 @@ from SDK.utils.constants import (
     PLAYER_BASES,
     PLAYER_COUNT,
     RANDOM_ANT_DECAY_TURNS,
+    RETREAT_MOVE_PENALTY,
     SPAWN_BEHAVIOR_WEIGHTS,
+    STALL_MOVE_PENALTY,
     STRATEGIC_BUILD_ORDER,
     SUPER_WEAPON_STATS,
     SuperWeaponType,
+    TARGET_PULL_DISTANCE_SCALE,
+    TOWER_KAMIKAZE_HP_THRESHOLD,
     TOWER_BUILD_BASE_COST,
     TOWER_BUILD_RATIO,
     TOWER_DOWNGRADE_REFUND_RATIO,
@@ -55,6 +60,7 @@ from SDK.utils.geometry import hex_distance, is_highland, is_path, is_valid_pos,
 RNG_MASK = (1 << 48) - 1
 RNG_MULTIPLIER = 25214903917
 RNG_INCREMENT = 11
+RANDOM_FLOAT_BITS = 24
 
 
 @lru_cache(maxsize=2)
@@ -93,8 +99,8 @@ def _trail_for_pheromone(ant: Ant) -> list[tuple[int, int]]:
 @dataclass(slots=True)
 class PublicRoundState:
     round_index: int
-    towers: list[tuple[int, int, int, int, int, int]]
-    ants: list[tuple[int, int, int, int, int, int, int, int, int]]
+    towers: list[tuple[int, ...]]
+    ants: list[tuple[int, ...]]
     coins: tuple[int, int]
     camps_hp: tuple[int, int]
 
@@ -133,7 +139,7 @@ class GameState:
         state = cls(seed=seed)
         state.bases = [Base(0, *PLAYER_BASES[0], hp=BASE_HP), Base(1, *PLAYER_BASES[1], hp=BASE_HP)]
         state._init_pheromone(seed)
-        state.rng_state = seed & RNG_MASK
+        state.rng_state = (seed ^ RNG_MULTIPLIER) & RNG_MASK
         return state
 
     def clone(self) -> GameState:
@@ -171,7 +177,7 @@ class GameState:
         return self.rng_state
 
     def _random_float(self) -> float:
-        return self._next_random() / float(RNG_MASK + 1)
+        return float((self._next_random() >> (48 - RANDOM_FLOAT_BITS)) & ((1 << RANDOM_FLOAT_BITS) - 1)) / float(1 << RANDOM_FLOAT_BITS)
 
     def _random_index(self, bound: int) -> int:
         if bound <= 1:
@@ -282,6 +288,160 @@ class GameState:
             if effect.weapon_type == weapon_type and effect.player == player:
                 return effect
         return None
+
+    def _enemy_tower_at(self, player: int, x: int, y: int) -> Tower | None:
+        tower = self.tower_at(x, y)
+        if tower is None or tower.player == player:
+            return None
+        return tower
+
+    def _move_progress_score(self, ant: Ant, x: int, y: int, target_x: int, target_y: int) -> float:
+        current_distance = hex_distance(ant.x, ant.y, target_x, target_y)
+        next_distance = hex_distance(x, y, target_x, target_y)
+        score = float(current_distance - next_distance)
+        if next_distance == current_distance:
+            score -= STALL_MOVE_PENALTY
+        elif next_distance > current_distance:
+            score -= RETREAT_MOVE_PENALTY * float(next_distance - current_distance)
+        base_distance = hex_distance(*PLAYER_BASES[0], *PLAYER_BASES[1])
+        score += max(0.0, float(base_distance - next_distance)) * TARGET_PULL_DISTANCE_SCALE
+        return score
+
+    def _move_pheromone_score(self, ant: Ant, x: int, y: int) -> float:
+        return float(self.pheromone[ant.player, x, y]) / 10000.0
+
+    def _damage_field_score(self, ant: Ant, x: int, y: int) -> float:
+        total = 0.0
+        effective_hp = max(ant.hp, 1)
+        for tower in self.towers:
+            if tower.player == ant.player or tower.is_producer:
+                continue
+            if hex_distance(x, y, tower.x, tower.y) <= tower.attack_range:
+                total += tower.damage / effective_hp
+        return total
+
+    def _control_field_score(self, ant: Ant, x: int, y: int) -> float:
+        if ant.control_immune:
+            return 0.0
+        score = 0.0
+        for tower in self.towers:
+            if tower.player == ant.player or tower.is_producer:
+                continue
+            if hex_distance(x, y, tower.x, tower.y) > tower.attack_range:
+                continue
+            if tower.tower_type == TowerType.ICE:
+                score += 1.0
+            elif tower.tower_type == TowerType.CANNON:
+                score += 1.3
+            elif tower.tower_type == TowerType.PULSE:
+                score += 0.7
+        return score
+
+    def _tower_pull_score(self, ant: Ant, x: int, y: int, tower_target: Tower | None = None) -> float:
+        if tower_target is not None:
+            bonus = 6.0 if ant.kind == AntKind.COMBAT else 1.5
+            bonus += max(0.0, float(TOWER_KAMIKAZE_HP_THRESHOLD - tower_target.hp)) * 0.75
+            return bonus
+        if ant.kind != AntKind.COMBAT:
+            return 0.0
+        best = 0.0
+        for tower in self.towers:
+            if tower.player == ant.player:
+                continue
+            distance_score = max(0.0, 6.0 - float(hex_distance(x, y, tower.x, tower.y)))
+            hp_score = max(0.0, float(TOWER_KAMIKAZE_HP_THRESHOLD - tower.hp)) * 0.6
+            best = max(best, distance_score + hp_score)
+        return best
+
+    def _compose_move_score(
+        self,
+        ant: Ant,
+        x: int,
+        y: int,
+        *,
+        target_x: int,
+        target_y: int,
+        tower_target: Tower | None = None,
+    ) -> tuple[float, float]:
+        weights = ant.move_weights
+        progress = self._move_progress_score(ant, x, y, target_x, target_y)
+        pheromone = self._move_pheromone_score(ant, x, y)
+        crowd = self._crowding_penalty(ant, x, y)
+        damage = self._damage_field_score(ant, x, y)
+        control = self._control_field_score(ant, x, y)
+        tower_pull = self._tower_pull_score(ant, x, y, tower_target)
+        raw = progress + pheromone + tower_pull
+        total = (
+            weights.progress * progress
+            + weights.pheromone * pheromone
+            - weights.crowding * crowd
+            - weights.expected_damage * damage
+            - weights.control_risk * control
+            + weights.tower_pull * tower_pull
+        )
+        return total, raw
+
+    def _spawn_cells_for_tower(self, tower: Tower) -> list[tuple[int, int]]:
+        cells: list[tuple[int, int]] = []
+        for _, nx, ny in neighbors(tower.x, tower.y):
+            if is_path(nx, ny):
+                cells.append((nx, ny))
+        return cells
+
+    def _spawn_ant_from_tower(self, tower: Tower, kind: AntKind) -> None:
+        cells = self._spawn_cells_for_tower(tower)
+        if not cells:
+            return
+        enemy_base = PLAYER_BASES[1 - tower.player]
+        best_x, best_y = max(
+            cells,
+            key=lambda cell: (
+                -hex_distance(cell[0], cell[1], *enemy_base),
+                -self._crowding_penalty(
+                    Ant(
+                        ant_id=-1,
+                        player=tower.player,
+                        x=cell[0],
+                        y=cell[1],
+                        hp=1,
+                        level=self.bases[tower.player].ant_level,
+                        kind=kind,
+                    ),
+                    cell[0],
+                    cell[1],
+                ),
+            ),
+        )
+        ant = self.bases[tower.player].spawn_ant(self.next_ant_id, kind=kind)
+        ant.x = best_x
+        ant.y = best_y
+        ant.trail_cells = [(best_x, best_y)]
+        ant.set_behavior(self._draw_spawn_behavior())
+        if kind == AntKind.COMBAT:
+            ant.grant_evasion(2, grant_control_free_on_deplete=True)
+        self.ants.append(ant)
+        self.next_ant_id += 1
+
+    def _support_frontline_ant(self, tower: Tower) -> None:
+        if tower.stats.heal_amount <= 0 or tower.stats.support_range <= 0:
+            return
+        enemy_base = PLAYER_BASES[1 - tower.player]
+        candidates = [
+            ant
+            for ant in self.ants
+            if ant.player == tower.player
+            and ant.is_alive()
+            and hex_distance(ant.x, ant.y, tower.x, tower.y) <= tower.stats.support_range
+        ]
+        if not candidates:
+            return
+        target = min(candidates, key=lambda ant: (hex_distance(ant.x, ant.y, *enemy_base), ant.ant_id))
+        target.hp = min(target.max_hp, target.hp + tower.stats.heal_amount)
+        target.grant_evasion(1, grant_control_free_on_deplete=True)
+        target.refresh_status()
+
+    def _remove_tower(self, tower_id: int) -> None:
+        self.towers = [tower for tower in self.towers if tower.tower_id != tower_id]
 
     def _ant_in_own_half(self, ant: Ant) -> bool:
         own_base = PLAYER_BASES[ant.player]
@@ -446,8 +606,7 @@ class GameState:
             if weapon_type == SuperWeaponType.EMERGENCY_EVASION:
                 for ant in self.ants:
                     if ant.player == player and hex_distance(operation.arg0, operation.arg1, ant.x, ant.y) <= stats.attack_range:
-                        ant.shield = 2
-                        ant.evasion = True
+                        ant.grant_evasion(2, grant_control_free_on_deplete=True)
             self.active_effects.append(WeaponEffect(weapon_type, player, operation.arg0, operation.arg1, stats.duration))
             return
         if operation.op_type == OperationType.UPGRADE_GENERATION_SPEED:
@@ -483,10 +642,10 @@ class GameState:
                 for effect in self.active_effects
             )
             self._maybe_control_free(ant, was_active=ant.deflector, is_active=current_deflector)
-            self._maybe_control_free(ant, was_active=ant.evasion, is_active=current_evasion)
             ant.deflector = current_deflector
-            ant.evasion = current_evasion
-            ant.shield = 2 if current_evasion else 0
+            if current_evasion:
+                ant.grant_evasion(2, grant_control_free_on_deplete=True)
+            ant.evasion = ant.shield > 0
             ant.refresh_status()
 
     def _apply_lightning_storm(self) -> None:
@@ -502,6 +661,8 @@ class GameState:
         self._prepare_ants_for_attack()
         self._apply_lightning_storm()
         for tower in self.towers:
+            if tower.is_producer:
+                continue
             if self.is_shielded_by_emp(tower.player, tower.x, tower.y):
                 continue
             tower.tick()
@@ -600,7 +761,8 @@ class GameState:
         for direction, nx, ny in neighbors(ant.x, ant.y):
             if not allow_backtrack and ant.last_move == (direction + 3) % 6:
                 continue
-            if (nx, ny) not in (enemy_base, own_base) and not is_path(nx, ny):
+            tower = self._enemy_tower_at(ant.player, nx, ny)
+            if tower is None and (nx, ny) not in (enemy_base, own_base) and not is_path(nx, ny):
                 continue
             if not is_valid_pos(nx, ny):
                 continue
@@ -631,35 +793,68 @@ class GameState:
             return candidates[self._random_index(len(candidates))][0]
 
         if ant.behavior == AntBehavior.BEWITCHED and ant.bewitch_target_x >= 0 and ant.bewitch_target_y >= 0:
-            current_distance = hex_distance(ant.x, ant.y, ant.bewitch_target_x, ant.bewitch_target_y)
             scores = []
             for _, nx, ny in candidates:
-                next_distance = hex_distance(nx, ny, ant.bewitch_target_x, ant.bewitch_target_y)
-                crowd = self._crowding_penalty(ant, nx, ny)
-                scores.append((current_distance - next_distance) * 4.0 - CROWDING_PENALTY * crowd)
+                tower_target = self._enemy_tower_at(ant.player, nx, ny)
+                eval_x, eval_y = (ant.x, ant.y) if tower_target is not None else (nx, ny)
+                score, _ = self._compose_move_score(
+                    ant,
+                    eval_x,
+                    eval_y,
+                    target_x=ant.bewitch_target_x,
+                    target_y=ant.bewitch_target_y,
+                    tower_target=tower_target,
+                )
+                scores.append(score + (4.0 if tower_target is not None else 0.0))
             return self._sample_move_from_scores(candidates, scores, BEWITCH_MOVE_TEMPERATURE)
 
-        current_distance = hex_distance(ant.x, ant.y, target_x, target_y)
         weighted_scores: list[float] = []
         raw_scores: list[float] = []
         for _, nx, ny in candidates:
-            pheromone = float(self.pheromone[ant.player, nx, ny])
-            next_distance = hex_distance(nx, ny, target_x, target_y)
-            if next_distance < current_distance:
-                weight = 1.25
-            elif next_distance == current_distance:
-                weight = 1.0
-            else:
-                weight = 0.75
-            crowd = self._crowding_penalty(ant, nx, ny)
-            raw = pheromone * weight
+            tower_target = self._enemy_tower_at(ant.player, nx, ny)
+            eval_x, eval_y = (ant.x, ant.y) if tower_target is not None else (nx, ny)
+            score, raw = self._compose_move_score(
+                ant,
+                eval_x,
+                eval_y,
+                target_x=target_x,
+                target_y=target_y,
+                tower_target=tower_target,
+            )
+            weighted_scores.append(score)
             raw_scores.append(raw)
-            weighted_scores.append(raw - CROWDING_PENALTY * crowd)
 
         if ant.behavior in (AntBehavior.CONSERVATIVE, AntBehavior.CONTROL_FREE):
-            best_index = max(range(len(candidates)), key=lambda index: (raw_scores[index], -index))
+            best_index = max(range(len(candidates)), key=lambda index: (weighted_scores[index], raw_scores[index], -index))
             return candidates[best_index][0]
         return self._sample_move_from_scores(candidates, weighted_scores, DEFAULT_MOVE_TEMPERATURE)
+
+    def _attack_tower_from_ant(self, ant: Ant, tower: Tower) -> None:
+        if ant.kind == AntKind.COMBAT and tower.hp < TOWER_KAMIKAZE_HP_THRESHOLD:
+            tower.hp = 0
+            ant.hp = 0
+            ant.refresh_status()
+            self._remove_tower(tower.tower_id)
+            return
+        destroyed = tower.take_damage(ant.tower_attack_damage)
+        if destroyed:
+            self._remove_tower(tower.tower_id)
+
+    def _resolve_ant_step(self, ant: Ant, direction: int) -> None:
+        if direction == NO_MOVE:
+            ant.record_move(direction)
+            ant.refresh_status()
+            return
+        dx, dy = OFFSET[ant.y % 2][direction]
+        tower = self._enemy_tower_at(ant.player, ant.x + dx, ant.y + dy)
+        if tower is not None:
+            self._attack_tower_from_ant(ant, tower)
+            ant.last_move = NO_MOVE
+            ant.evasion = ant.shield > 0
+            ant.refresh_status()
+            return
+        ant.record_move(direction)
+        ant.refresh_status()
 
     def _teleport_ants(self) -> None:
         if ANT_TELEPORT_INTERVAL <= 0 or (self.round_index + 1) % ANT_TELEPORT_INTERVAL != 0:
@@ -691,8 +886,7 @@ class GameState:
             direction = NO_MOVE
             if ant.status == AntStatus.ALIVE:
                 direction = self._choose_ant_move(ant)
-            ant.record_move(direction)
-            ant.refresh_status()
+            self._resolve_ant_step(ant, direction)
         self._teleport_ants()
 
     def _update_pheromone(self) -> None:
@@ -782,6 +976,21 @@ class GameState:
                 ant.set_behavior(self._draw_spawn_behavior())
                 self.ants.append(ant)
                 self.next_ant_id += 1
+        for tower in self.towers:
+            if not tower.is_producer:
+                continue
+            if self.is_shielded_by_emp(tower.player, tower.x, tower.y):
+                continue
+            tower.tick()
+            if not tower.ready_to_fire():
+                continue
+            self._spawn_ant_from_tower(tower, AntKind.WORKER)
+            if tower.tower_type == TowerType.PRODUCER_SIEGE:
+                if self._random_float() <= tower.stats.siege_spawn_chance:
+                    self._spawn_ant_from_tower(tower, AntKind.COMBAT)
+            elif tower.tower_type == TowerType.PRODUCER_MEDIC:
+                self._support_frontline_ant(tower)
+            tower.reset_cooldown()
 
     def _increase_ant_age(self) -> None:
         for ant in self.ants:
@@ -869,11 +1078,11 @@ class GameState:
 
     def to_public_round_state(self) -> PublicRoundState:
         towers = [
-            (tower.tower_id, tower.player, tower.x, tower.y, int(tower.tower_type), tower.display_cooldown())
+            (tower.tower_id, tower.player, tower.x, tower.y, int(tower.tower_type), tower.display_cooldown(), tower.hp)
             for tower in sorted(self.towers, key=lambda item: item.tower_id)
         ]
         ants = [
-            (ant.ant_id, ant.player, ant.x, ant.y, ant.hp, ant.level, ant.age, int(ant.status), int(ant.behavior))
+            (ant.ant_id, ant.player, ant.x, ant.y, ant.hp, ant.level, ant.age, int(ant.status), int(ant.behavior), int(ant.kind))
             for ant in sorted(self.ants, key=lambda item: item.ant_id)
         ]
         return PublicRoundState(
@@ -890,13 +1099,17 @@ class GameState:
         self.bases[0].hp, self.bases[1].hp = public_state.camps_hp
         tower_map = {tower.tower_id: tower for tower in self.towers}
         synced_towers: list[Tower] = []
-        for tower_id, player, x, y, tower_type, cooldown in public_state.towers:
-            tower = tower_map.get(tower_id, Tower(tower_id, player, x, y, TowerType(tower_type), float(cooldown)))
+        for tower_row in public_state.towers:
+            tower_id, player, x, y, tower_type, cooldown = tower_row[:6]
+            public_hp = tower_row[6] if len(tower_row) >= 7 else -1
+            tower = tower_map.get(tower_id, Tower(tower_id, player, x, y, TowerType(tower_type), float(cooldown), hp=int(public_hp)))
             tower.player = player
             tower.x = x
             tower.y = y
             tower.tower_type = TowerType(tower_type)
             tower.cooldown_clock = float(cooldown)
+            if public_hp >= 0:
+                tower.hp = int(public_hp)
             synced_towers.append(tower)
         self.towers = synced_towers
         ant_map = {ant.ant_id: ant for ant in self.ants}
@@ -921,6 +1134,8 @@ class GameState:
                 if ant.behavior != AntBehavior.BEWITCHED:
                     ant.bewitch_target_x = -1
                     ant.bewitch_target_y = -1
+            if len(ant_row) >= 10:
+                ant.set_kind(AntKind(ant_row[9]))
             synced_ants.append(ant)
         self.ants = synced_ants
         if self.towers:

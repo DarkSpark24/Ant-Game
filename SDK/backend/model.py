@@ -5,10 +5,14 @@ from dataclasses import dataclass, field
 from SDK.utils.constants import (
     ANT_AGE_LIMIT,
     AntBehavior,
+    AntKind,
     ANT_KILL_REWARD,
     ANT_MAX_HP,
     ANT_GENERATION_CYCLE,
     AntStatus,
+    COMBAT_TOWER_ATTACK_DAMAGE,
+    MoveWeights,
+    MOVE_PROFILE_WEIGHTS,
     OFFSET,
     OperationType,
     PLAYER_BASES,
@@ -17,6 +21,7 @@ from SDK.utils.constants import (
     TOWER_STATS,
     TOWER_UPGRADE_TREE,
     TowerType,
+    WORKER_TOWER_ATTACK_DAMAGE,
 )
 from SDK.utils.geometry import hex_distance
 
@@ -59,12 +64,14 @@ class Ant:
     y: int
     hp: int
     level: int
+    kind: AntKind = AntKind.WORKER
     age: int = 0
     status: AntStatus = AntStatus.ALIVE
     trail_cells: list[tuple[int, int]] = field(default_factory=list)
     last_move: int = NO_MOVE
     path_len_total: int = 0
     shield: int = 0
+    evasion_grants_control_free: bool = False
     deflector: bool = False
     frozen: bool = False
     evasion: bool = False
@@ -74,10 +81,13 @@ class Ant:
     bewitch_target_x: int = -1
     bewitch_target_y: int = -1
     pending_behavior: AntBehavior | None = None
+    move_weights: MoveWeights | None = field(default=None)
 
     def __post_init__(self) -> None:
         if not self.trail_cells:
             self.trail_cells.append((self.x, self.y))
+        if self.move_weights is None:
+            self.move_weights = MOVE_PROFILE_WEIGHTS[self.kind]
 
     def clone(self) -> Ant:
         return Ant(
@@ -87,12 +97,14 @@ class Ant:
             y=self.y,
             hp=self.hp,
             level=self.level,
+            kind=self.kind,
             age=self.age,
             status=self.status,
             trail_cells=list(self.trail_cells),
             last_move=self.last_move,
             path_len_total=self.path_len_total,
             shield=self.shield,
+            evasion_grants_control_free=self.evasion_grants_control_free,
             deflector=self.deflector,
             frozen=self.frozen,
             evasion=self.evasion,
@@ -102,6 +114,7 @@ class Ant:
             bewitch_target_x=self.bewitch_target_x,
             bewitch_target_y=self.bewitch_target_y,
             pending_behavior=self.pending_behavior,
+            move_weights=self.move_weights,
         )
 
     def record_move(self, direction: int) -> None:
@@ -135,6 +148,23 @@ class Ant:
     @property
     def control_immune(self) -> bool:
         return self.behavior == AntBehavior.CONTROL_FREE
+
+    @property
+    def tower_attack_damage(self) -> int:
+        if self.kind == AntKind.COMBAT:
+            return COMBAT_TOWER_ATTACK_DAMAGE
+        return WORKER_TOWER_ATTACK_DAMAGE[self.level]
+
+    def set_kind(self, kind: AntKind) -> None:
+        self.kind = kind
+        self.move_weights = MOVE_PROFILE_WEIGHTS[kind]
+
+    def grant_evasion(self, stacks: int, *, grant_control_free_on_deplete: bool = True) -> None:
+        if stacks <= 0:
+            return
+        self.shield = max(self.shield, stacks)
+        self.evasion = self.shield > 0
+        self.evasion_grants_control_free = self.evasion_grants_control_free or grant_control_free_on_deplete
 
     def set_behavior(
         self,
@@ -178,6 +208,10 @@ class Ant:
             return
         if self.shield > 0:
             self.shield -= 1
+            self.evasion = self.shield > 0
+            if self.shield == 0 and self.evasion_grants_control_free and not self.control_immune:
+                self.evasion_grants_control_free = False
+                self.set_behavior(AntBehavior.CONTROL_FREE)
             return
         if self.deflector and amount * 2 < self.max_hp:
             return
@@ -195,6 +229,11 @@ class Tower:
     y: int
     tower_type: TowerType = TowerType.BASIC
     cooldown_clock: float = 0.0
+    hp: int = -1
+
+    def __post_init__(self) -> None:
+        if self.hp < 0:
+            self.hp = self.stats.max_hp
 
     def clone(self) -> Tower:
         return Tower(
@@ -204,6 +243,7 @@ class Tower:
             y=self.y,
             tower_type=self.tower_type,
             cooldown_clock=self.cooldown_clock,
+            hp=self.hp,
         )
 
     @property
@@ -223,6 +263,19 @@ class Tower:
         return self.stats.attack_range
 
     @property
+    def max_hp(self) -> int:
+        return self.stats.max_hp
+
+    @property
+    def is_producer(self) -> bool:
+        return self.tower_type in (
+            TowerType.PRODUCER,
+            TowerType.PRODUCER_FAST,
+            TowerType.PRODUCER_SIEGE,
+            TowerType.PRODUCER_MEDIC,
+        )
+
+    @property
     def level(self) -> int:
         if self.tower_type == TowerType.BASIC:
             return 0
@@ -231,21 +284,42 @@ class Tower:
         return 2
 
     def reset_cooldown(self) -> None:
-        self.cooldown_clock = self.speed
+        if self.is_producer:
+            self.cooldown_clock = float(self.stats.spawn_interval)
+        else:
+            self.cooldown_clock = self.speed
 
     def is_upgrade_type_valid(self, target: TowerType) -> bool:
         return target in TOWER_UPGRADE_TREE.get(self.tower_type, ())
 
     def upgrade(self, target: TowerType) -> None:
+        previous_max_hp = self.max_hp
+        previous_hp = max(0, self.hp)
         self.tower_type = target
+        if previous_max_hp > 0:
+            self.hp = max(1, int(round(self.max_hp * previous_hp / previous_max_hp)))
+        else:
+            self.hp = self.max_hp
         self.reset_cooldown()
 
     def downgrade_or_destroy(self) -> bool:
         if self.tower_type == TowerType.BASIC:
             return True
+        previous_max_hp = self.max_hp
+        previous_hp = max(0, self.hp)
         self.tower_type = TowerType(self.tower_type.value // 10)
+        if previous_max_hp > 0:
+            self.hp = max(1, int(round(self.max_hp * previous_hp / previous_max_hp)))
+        else:
+            self.hp = self.max_hp
         self.reset_cooldown()
         return False
+
+    def take_damage(self, amount: int) -> bool:
+        if amount <= 0:
+            return False
+        self.hp -= amount
+        return self.hp <= 0
 
     def ready_to_fire(self) -> bool:
         return self.cooldown_clock <= 0.0
@@ -255,6 +329,8 @@ class Tower:
             self.cooldown_clock -= 1.0
 
     def display_cooldown(self) -> int:
+        if self.is_producer:
+            return max(int(self.cooldown_clock), 0)
         if self.speed < 1:
             return 0
         return max(int(self.cooldown_clock), 0)
@@ -282,7 +358,7 @@ class Base:
     def should_spawn(self, round_index: int) -> bool:
         return round_index % ANT_GENERATION_CYCLE[self.generation_level] == 0
 
-    def spawn_ant(self, ant_id: int) -> Ant:
+    def spawn_ant(self, ant_id: int, *, kind: AntKind = AntKind.WORKER) -> Ant:
         return Ant(
             ant_id=ant_id,
             player=self.player,
@@ -290,6 +366,7 @@ class Base:
             y=self.y,
             hp=ANT_MAX_HP[self.ant_level],
             level=self.ant_level,
+            kind=kind,
         )
 
 

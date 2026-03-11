@@ -30,6 +30,9 @@ NLOHMANN_JSON_SERIALIZE_ENUM(Ant::Behavior, {{Ant::Behavior::Default, 0},
                                              {Ant::Behavior::Bewitched, 3},
                                              {Ant::Behavior::ControlFree, 4}})
 
+NLOHMANN_JSON_SERIALIZE_ENUM(Ant::Kind, {{Ant::Kind::Worker, 0},
+                                         {Ant::Kind::Combat, 1}})
+
 // Serialize Ant.
 inline void to_json(json &j, const Ant &ant) {
     j = json{{"player", ant.get_player()},
@@ -41,7 +44,8 @@ inline void to_json(json &j, const Ant &ant) {
              {"level", ant.get_level()},
              {"age", ant.get_age()},
              {"status", ant.get_status()},
-             {"behavior", ant.get_behavior()}};
+             {"behavior", ant.get_behavior()},
+             {"kind", ant.get_kind()}};
 }
 
 // Add a Ant into the json object.
@@ -52,7 +56,8 @@ inline void to_json(json &j, const DefenseTower &tower) {
     j = json{{"player", tower.get_player()},
              {"id", tower.get_id()},
              {"pos", {{"x", tower.get_x()}, {"y", tower.get_y()}}},
-             {"cd", tower.get_cd()}};
+             {"cd", tower.get_cd()},
+             {"hp", tower.get_hp()}};
 }
 
 // Add a DefensiveTower into the json object.

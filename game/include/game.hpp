@@ -70,11 +70,26 @@ class Game {
     int random_index(int bound);
     int choose_ant_move(const Ant &ant);
     bool ant_can_walk_to(int x, int y) const;
+    bool ant_can_target_cell(const Ant &ant, int x, int y) const;
     double crowding_penalty(const Ant &ant, int x, int y) const;
+    double move_progress_score(const Ant &ant, int x, int y, const Pos &target) const;
+    double move_pheromone_score(const Ant &ant, int x, int y) const;
+    double expected_damage_cost(const Ant &ant, int x, int y) const;
+    double control_risk_cost(const Ant &ant, int x, int y) const;
+    double tower_pull_score(const Ant &ant, int x, int y,
+                            const DefenseTower *tower_target) const;
     void teleport_ants();
     void drift_items();
     std::pair<int, int> random_own_half_target(int player);
     bool ant_in_own_half(const Ant &ant) const;
+    DefenseTower *enemy_tower_at(int player, int x, int y);
+    const DefenseTower *enemy_tower_at(int player, int x, int y) const;
+    void grant_emergency_evasion(Ant &ant, int stacks,
+                                 bool grant_control_free_on_deplete = true);
+    void attack_tower_from_ant(Ant &ant, DefenseTower &tower);
+    void resolve_ant_step(Ant &ant, int move);
+    void spawn_ant_from_tower(const DefenseTower &tower, Ant::Kind kind);
+    void process_producer_towers();
     void apply_control(Ant &ant, Ant::Behavior behavior,
                        const std::pair<int, int> *target = nullptr);
     void maybe_control_free(Ant &ant, bool was_active, bool is_active);

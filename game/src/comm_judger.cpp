@@ -247,7 +247,8 @@ void to_judger::cur_json_to_oj(const json &src, const int &state) {
                        std::to_string(tower_info["pos"]["x"].get<int>()) + " " +
                        std::to_string(tower_info["pos"]["y"].get<int>()) + " " +
                        std::to_string(tower_info["type"].get<int>()) + " " +
-                       std::to_string(tower_info["cd"].get<int>()) + "\n";
+                       std::to_string(tower_info["cd"].get<int>()) + " " +
+                       std::to_string(tower_info.value("hp", 10)) + "\n";
     }
     json_list = src["ants"].get<json::array_t>();
     oj_to_judger += std::to_string(json_list.size());
@@ -262,7 +263,8 @@ void to_judger::cur_json_to_oj(const json &src, const int &state) {
                        std::to_string(ant_info["level"].get<int>()) + " " +
                        std::to_string(ant_info["age"].get<int>()) + " " +
                        std::to_string(ant_info["status"].get<int>()) + " " +
-                       std::to_string(ant_info.value("behavior", 0)) + "\n";
+                       std::to_string(ant_info.value("behavior", 0)) + " " +
+                       std::to_string(ant_info.value("kind", 0)) + "\n";
     }
     std::vector<int> coin = src["coins"].get<std::vector<int>>();
     oj_to_judger = oj_to_judger + std::to_string(coin[0]) + " " +

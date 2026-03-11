@@ -24,12 +24,17 @@ namespace {
 constexpr unsigned long long RNG_MASK = (1ULL << 48) - 1;
 constexpr unsigned long long RNG_MULTIPLIER = 25214903917ULL;
 constexpr unsigned long long RNG_INCREMENT = 11ULL;
-constexpr double DEFAULT_MOVE_TEMPERATURE = 4.0;
+constexpr int RANDOM_FLOAT_BITS = 24;
+constexpr double DEFAULT_MOVE_TEMPERATURE = 1.75;
 constexpr double BEWITCH_MOVE_TEMPERATURE = 1.5;
 constexpr double CROWDING_PENALTY = 1.25;
 constexpr int RANDOM_ANT_DECAY_TURNS = 5;
 constexpr int ANT_TELEPORT_INTERVAL = 10;
 constexpr double ANT_TELEPORT_RATIO = 0.2;
+constexpr double STALL_MOVE_PENALTY = 0.35;
+constexpr double RETREAT_MOVE_PENALTY = 0.8;
+constexpr double TARGET_PULL_DISTANCE_SCALE = 0.18;
+constexpr int TOWER_KAMIKAZE_HP_THRESHOLD = 5;
 constexpr double SPAWN_BEHAVIOR_PROBS[4] = {0.4, 0.3, 0.25, 0.05};
 constexpr std::size_t MAX_JUDGER_PACKET_SIZE = 16 * 1024 * 1024;
 const int ant_dx[2][6][2] = {
@@ -80,7 +85,9 @@ unsigned long long Game::next_random() {
 }
 
 double Game::random_float() {
-    return next_random() / static_cast<double>(RNG_MASK + 1ULL);
+    return static_cast<double>((next_random() >> (48 - RANDOM_FLOAT_BITS)) &
+                               ((1ULL << RANDOM_FLOAT_BITS) - 1ULL)) /
+           static_cast<double>(1ULL << RANDOM_FLOAT_BITS);
 }
 
 int Game::random_index(int bound) {
@@ -99,6 +106,31 @@ bool Game::ant_can_walk_to(int x, int y) const {
     return map.map[x][y].player == -1;
 }
 
+bool Game::ant_can_target_cell(const Ant &ant, int x, int y) const {
+    if (ant_can_walk_to(x, y))
+        return true;
+    const DefenseTower *tower = enemy_tower_at(ant.get_player(), x, y);
+    return tower != nullptr;
+}
+
+DefenseTower *Game::enemy_tower_at(int player, int x, int y) {
+    if (!map.is_valid(x, y))
+        return nullptr;
+    DefenseTower *tower = map.map[x][y].tower;
+    if (tower == nullptr || tower->destroy() || tower->get_player() == player)
+        return nullptr;
+    return tower;
+}
+
+const DefenseTower *Game::enemy_tower_at(int player, int x, int y) const {
+    if (!map.is_valid(x, y))
+        return nullptr;
+    const DefenseTower *tower = map.map[x][y].tower;
+    if (tower == nullptr || tower->destroy() || tower->get_player() == player)
+        return nullptr;
+    return tower;
+}
+
 double Game::crowding_penalty(const Ant &ant, int x, int y) const {
     double penalty = 0.0;
     for (const auto &other : ants) {
@@ -112,6 +144,94 @@ double Game::crowding_penalty(const Ant &ant, int x, int y) const {
             penalty += 0.35;
     }
     return penalty;
+}
+
+double Game::move_progress_score(const Ant &ant, int x, int y,
+                                 const Pos &target) const {
+    int current_distance = distance(Pos(ant.get_x(), ant.get_y()), target);
+    int next_distance = distance(Pos(x, y), target);
+    double score = static_cast<double>(current_distance - next_distance);
+    if (next_distance == current_distance)
+        score -= STALL_MOVE_PENALTY;
+    else if (next_distance > current_distance)
+        score -= RETREAT_MOVE_PENALTY *
+                 static_cast<double>(next_distance - current_distance);
+    int base_distance = distance(Pos(PLAYER_0_BASE_CAMP_X, PLAYER_0_BASE_CAMP_Y),
+                                 Pos(PLAYER_1_BASE_CAMP_X, PLAYER_1_BASE_CAMP_Y));
+    score += std::max(0.0, static_cast<double>(base_distance - next_distance)) *
+             TARGET_PULL_DISTANCE_SCALE;
+    return score;
+}
+
+double Game::move_pheromone_score(const Ant &ant, int x, int y) const {
+    return static_cast<double>(map.map[x][y].pheromone[ant.get_player()]) /
+           PHEROMONE_SCALE;
+}
+
+double Game::expected_damage_cost(const Ant &ant, int x, int y) const {
+    double total = 0.0;
+    int effective_hp = std::max(ant.get_hp(), 1);
+    for (const auto &tower : defensive_towers) {
+        if (tower.destroy() || tower.get_player() == ant.get_player() ||
+            tower.is_producer())
+            continue;
+        if (distance(Pos(x, y), Pos(tower.get_x(), tower.get_y())) <=
+            tower.get_range()) {
+            total += static_cast<double>(tower.get_damage()) / effective_hp;
+        }
+    }
+    return total;
+}
+
+double Game::control_risk_cost(const Ant &ant, int x, int y) const {
+    if (ant.is_control_immune())
+        return 0.0;
+    double total = 0.0;
+    for (const auto &tower : defensive_towers) {
+        if (tower.destroy() || tower.get_player() == ant.get_player() ||
+            tower.is_producer())
+            continue;
+        if (distance(Pos(x, y), Pos(tower.get_x(), tower.get_y())) >
+            tower.get_range())
+            continue;
+        switch (tower.get_type()) {
+        case TowerType::Ice:
+            total += 1.0;
+            break;
+        case TowerType::Cannon:
+            total += 1.3;
+            break;
+        case TowerType::Pulse:
+            total += 0.7;
+            break;
+        default:
+            break;
+        }
+    }
+    return total;
+}
+
+double Game::tower_pull_score(const Ant &ant, int x, int y,
+                              const DefenseTower *tower_target) const {
+    if (tower_target != nullptr) {
+        double bonus = ant.is_combat_ant() ? 6.0 : 1.5;
+        bonus += std::max(0, TOWER_KAMIKAZE_HP_THRESHOLD - tower_target->get_hp()) *
+                 0.75;
+        return bonus;
+    }
+    if (!ant.is_combat_ant())
+        return 0.0;
+    double best = 0.0;
+    for (const auto &tower : defensive_towers) {
+        if (tower.destroy() || tower.get_player() == ant.get_player())
+            continue;
+        double distance_score =
+            std::max(0.0, 6.0 - distance(Pos(x, y), Pos(tower.get_x(), tower.get_y())));
+        double hp_score =
+            std::max(0, TOWER_KAMIKAZE_HP_THRESHOLD - tower.get_hp()) * 0.6;
+        best = std::max(best, distance_score + hp_score);
+    }
+    return best;
 }
 
 bool Game::ant_in_own_half(const Ant &ant) const {
@@ -153,6 +273,11 @@ void Game::maybe_control_free(Ant &ant, bool was_active, bool is_active) {
         ant.set_behavior(Ant::Behavior::ControlFree);
 }
 
+void Game::grant_emergency_evasion(Ant &ant, int stacks,
+                                   bool grant_control_free_on_deplete) {
+    ant.grant_evasion(stacks, grant_control_free_on_deplete);
+}
+
 void Game::prepare_ants_for_attack() {
     for (auto &ant : ants) {
         if (ant.is_frozen) {
@@ -173,10 +298,10 @@ void Game::prepare_ants_for_attack() {
             distance(Pos(ant.get_x(), ant.get_y()), Pos(evasion.x, evasion.y)) <= 3)
             current_evasion = true;
         maybe_control_free(ant, ant.defend, current_deflect);
-        maybe_control_free(ant, ant.evasion, current_evasion);
         ant.defend = current_deflect;
-        ant.evasion = current_evasion;
-        ant.shield = current_evasion ? 2 : 0;
+        if (current_evasion)
+            grant_emergency_evasion(ant, 2, true);
+        ant.evasion = ant.shield > 0;
     }
 }
 
@@ -224,7 +349,7 @@ int Game::choose_ant_move(const Ant &ant) {
             if (!allow_reverse && ant.get_last_move() >= 0 &&
                 ant.get_last_move() == ((direction + 3) % 6))
                 continue;
-            if (!ant_can_walk_to(nx, ny))
+            if (!ant_can_target_cell(ant, nx, ny))
                 continue;
             candidates.emplace_back(direction, nx, ny);
         }
@@ -243,36 +368,57 @@ int Game::choose_ant_move(const Ant &ant) {
     raw_scores.reserve(candidates.size());
     if (ant.get_behavior() == Ant::Behavior::Bewitched && ant.target_x >= 0 &&
         ant.target_y >= 0) {
-        int current_distance =
-            distance(Pos(ant.get_x(), ant.get_y()), Pos(ant.target_x, ant.target_y));
         for (const auto &candidate : candidates) {
             int nx = std::get<1>(candidate);
             int ny = std::get<2>(candidate);
-            int next_distance = distance(Pos(nx, ny), Pos(ant.target_x, ant.target_y));
-            scores.push_back((current_distance - next_distance) * 4.0 -
-                             CROWDING_PENALTY * crowding_penalty(ant, nx, ny));
-            raw_scores.push_back(scores.back());
+            const DefenseTower *tower_target = enemy_tower_at(ant.get_player(), nx, ny);
+            int eval_x = tower_target ? ant.get_x() : nx;
+            int eval_y = tower_target ? ant.get_y() : ny;
+            double score =
+                ant.move_weights.progress *
+                    move_progress_score(ant, eval_x, eval_y,
+                                        Pos(ant.target_x, ant.target_y)) +
+                ant.move_weights.pheromone *
+                    move_pheromone_score(ant, eval_x, eval_y) -
+                ant.move_weights.crowding *
+                    crowding_penalty(ant, eval_x, eval_y) -
+                ant.move_weights.expected_damage *
+                    expected_damage_cost(ant, eval_x, eval_y) -
+                ant.move_weights.control_risk *
+                    control_risk_cost(ant, eval_x, eval_y) +
+                ant.move_weights.tower_pull *
+                    tower_pull_score(ant, eval_x, eval_y, tower_target) +
+                (tower_target ? 4.0 : 0.0);
+            scores.push_back(score);
+            raw_scores.push_back(score);
         }
     } else {
-        int current_distance = distance(Pos(ant.get_x(), ant.get_y()), target);
         for (const auto &candidate : candidates) {
             int nx = std::get<1>(candidate);
             int ny = std::get<2>(candidate);
-            double pheromone = map.map[nx][ny].pheromone[ant.get_player()];
-            int next_distance = distance(Pos(nx, ny), target);
-            double weight = next_distance < current_distance
-                                ? 1.25
-                                : (next_distance == current_distance ? 1.0 : 0.75);
-            double raw = pheromone * weight;
+            const DefenseTower *tower_target = enemy_tower_at(ant.get_player(), nx, ny);
+            int eval_x = tower_target ? ant.get_x() : nx;
+            int eval_y = tower_target ? ant.get_y() : ny;
+            double progress = move_progress_score(ant, eval_x, eval_y, target);
+            double pheromone = move_pheromone_score(ant, eval_x, eval_y);
+            double tower_pull = tower_pull_score(ant, eval_x, eval_y, tower_target);
+            double raw = progress + pheromone + tower_pull;
             raw_scores.push_back(raw);
-            scores.push_back(raw - CROWDING_PENALTY * crowding_penalty(ant, nx, ny));
+            scores.push_back(
+                ant.move_weights.progress * progress +
+                ant.move_weights.pheromone * pheromone -
+                ant.move_weights.crowding * crowding_penalty(ant, eval_x, eval_y) -
+                ant.move_weights.expected_damage * expected_damage_cost(ant, eval_x, eval_y) -
+                ant.move_weights.control_risk * control_risk_cost(ant, eval_x, eval_y) +
+                ant.move_weights.tower_pull * tower_pull);
         }
     }
     if (ant.get_behavior() == Ant::Behavior::Conservative ||
         ant.get_behavior() == Ant::Behavior::ControlFree) {
         int best = 0;
         for (int i = 1; i < static_cast<int>(scores.size()); ++i)
-            if (raw_scores[i] > raw_scores[best])
+            if (scores[i] > scores[best] ||
+                (scores[i] == scores[best] && raw_scores[i] > raw_scores[best]))
                 best = i;
         return std::get<0>(candidates[best]);
     }
@@ -296,6 +442,41 @@ int Game::choose_ant_move(const Ant &ant) {
             return std::get<0>(candidates[i]);
     }
     return std::get<0>(candidates.back());
+}
+
+void Game::attack_tower_from_ant(Ant &ant, DefenseTower &tower) {
+    if (ant.is_combat_ant() && tower.get_hp() < TOWER_KAMIKAZE_HP_THRESHOLD) {
+        tower.take_damage(tower.get_hp());
+        tower.set_changed_this_round();
+        map.destroy(tower.get_x(), tower.get_y());
+        tower.set_destroy();
+        ant.set_hp_true(-ant.get_hp());
+        return;
+    }
+    if (tower.take_damage(ant.get_tower_attack_damage())) {
+        tower.set_changed_this_round();
+        map.destroy(tower.get_x(), tower.get_y());
+        tower.set_destroy();
+    } else {
+        tower.set_changed_this_round();
+    }
+}
+
+void Game::resolve_ant_step(Ant &ant, int move) {
+    if (move == Ant::NoMove) {
+        ant.move(move);
+        return;
+    }
+    int nx = ant.get_x() + ant_dx[ant.get_y() % 2][move][0];
+    int ny = ant.get_y() + ant_dx[ant.get_y() % 2][move][1];
+    DefenseTower *tower = enemy_tower_at(ant.get_player(), nx, ny);
+    if (tower != nullptr) {
+        attack_tower_from_ant(ant, *tower);
+        ant.reset_backtrack();
+        ant.evasion = ant.shield > 0;
+        return;
+    }
+    ant.move(move);
 }
 
 void Game::teleport_ants() {
@@ -397,7 +578,7 @@ void Game::init()
         std::random_device rd;
         random_seed = rd();
     }
-    rng_state = random_seed & RNG_MASK;
+    rng_state = (random_seed ^ RNG_MULTIPLIER) & RNG_MASK;
     map.init_pheromon(random_seed);
     // send config json to judger
     // default config
@@ -481,6 +662,8 @@ void Game::attack_ants()
     for (auto &tower : defensive_towers)
     {
         if (tower.destroy())
+            continue;
+        if (tower.is_producer())
             continue;
         // EMP
         Item it = item[!tower.get_player()][ItemType::EMPBlaster];
@@ -567,7 +750,7 @@ void Game::move_ants()
         if (ant.get_status() == Ant::Status::Alive) {
             move = choose_ant_move(ant);
         }
-        ant.move(move);
+        resolve_ant_step(ant, move);
     }
 }
 
@@ -588,6 +771,47 @@ void Game::generate_ants()
         return Ant::Behavior::ControlFree;
     };
 
+    auto choose_spawn_cell = [this](const DefenseTower &tower) {
+        std::vector<std::pair<int, int>> cells;
+        Pos enemy = tower.get_player() ? Pos(PLAYER_0_BASE_CAMP_X, PLAYER_0_BASE_CAMP_Y)
+                                       : Pos(PLAYER_1_BASE_CAMP_X, PLAYER_1_BASE_CAMP_Y);
+        double best_score = -1e18;
+        std::pair<int, int> best = {tower.get_x(), tower.get_y()};
+        for (int direction = 0; direction < 6; ++direction) {
+            int nx = tower.get_x() + ant_dx[tower.get_y() % 2][direction][0];
+            int ny = tower.get_y() + ant_dx[tower.get_y() % 2][direction][1];
+            if (!ant_can_walk_to(nx, ny))
+                continue;
+            double score = -distance(Pos(nx, ny), enemy);
+            score -= crowding_penalty(
+                Ant(tower.get_player(), -1, nx, ny,
+                    tower.get_player() ? base_camp1.get_ant_level()
+                                       : base_camp0.get_ant_level()),
+                nx, ny);
+            if (score > best_score) {
+                best_score = score;
+                best = {nx, ny};
+            }
+        }
+        return best;
+    };
+
+    auto spawn_from_tower = [&](const DefenseTower &tower, Ant::Kind kind) {
+        auto cell = choose_spawn_cell(tower);
+        if (!ant_can_walk_to(cell.first, cell.second))
+            return;
+        int ant_level =
+            tower.get_player() ? base_camp1.get_ant_level() : base_camp0.get_ant_level();
+        ants.push_back(Ant(tower.get_player(), ant_id, cell.first, cell.second,
+                           ant_level, kind));
+        ants.back().trail_cells = {Pos(cell.first, cell.second)};
+        ants.back().set_behavior(draw_spawn_behavior());
+        if (kind == Ant::Kind::Combat)
+            grant_emergency_evasion(ants.back(), 2, true);
+        output.add_ant(ants.back());
+        ant_id++;
+    };
+
     if (base_camp0.create_new_ant(round))
     {
 
@@ -605,6 +829,52 @@ void Game::generate_ants()
         ants.back().set_behavior(draw_spawn_behavior());
         output.add_ant(ants.back());
         ant_id++;
+    }
+
+    for (auto &tower : defensive_towers) {
+        if (tower.destroy() || !tower.is_producer())
+            continue;
+        Item it = item[!tower.get_player()][ItemType::EMPBlaster];
+        if (it.duration &&
+            distance(Pos(tower.get_x(), tower.get_y()), Pos(it.x, it.y)) <= 3)
+            continue;
+        tower.round++;
+        if (tower.round < tower.get_spawn_interval())
+            continue;
+        spawn_from_tower(tower, Ant::Kind::Worker);
+        if (tower.get_type() == TowerType::ProducerSiege &&
+            random_float() <= tower.get_siege_spawn_chance()) {
+            spawn_from_tower(tower, Ant::Kind::Combat);
+        } else if (tower.get_type() == TowerType::ProducerMedic) {
+            Pos enemy = tower.get_player() ? Pos(PLAYER_0_BASE_CAMP_X, PLAYER_0_BASE_CAMP_Y)
+                                           : Pos(PLAYER_1_BASE_CAMP_X, PLAYER_1_BASE_CAMP_Y);
+            Ant *target = nullptr;
+            for (auto &ant : ants) {
+                if (ant.get_player() != tower.get_player() ||
+                    ant.get_status() == Ant::Status::Fail ||
+                    ant.get_status() == Ant::Status::TooOld)
+                    continue;
+                if (distance(Pos(ant.get_x(), ant.get_y()),
+                             Pos(tower.get_x(), tower.get_y())) >
+                    tower.get_support_range())
+                    continue;
+                if (target == nullptr ||
+                    distance(Pos(ant.get_x(), ant.get_y()), enemy) <
+                        distance(Pos(target->get_x(), target->get_y()), enemy) ||
+                    (distance(Pos(ant.get_x(), ant.get_y()), enemy) ==
+                         distance(Pos(target->get_x(), target->get_y()), enemy) &&
+                     ant.get_id() < target->get_id())) {
+                    target = &ant;
+                }
+            }
+            if (target != nullptr) {
+                target->set_hp_true(tower.get_heal_amount());
+                if (target->get_hp() > target->get_hp_limit())
+                    target->set_hp_true(target->get_hp_limit() - target->get_hp());
+                grant_emergency_evasion(*target, 1, true);
+            }
+        }
+        tower.round = 0;
     }
 }
 
@@ -1184,8 +1454,7 @@ bool Game::apply_operation(const std::vector<Operation> &op_list, int player,
                 if (ant.get_player() == player &&
                     distance(Pos(x, y), Pos(ant.get_x(), ant.get_y())) <= 3)
                 {
-                    ant.shield = 2;
-                    ant.evasion = true;
+                    grant_emergency_evasion(ant, 2, true);
                 }
             }
             item[player][it] = Item(it, x, y);
@@ -1349,7 +1618,15 @@ void Game::dump_round_state(/* const std::string &filename */)
     // state info
     for (auto &tower : defensive_towers)
     {
-        if (tower.is_changed() && !tower.destroy())
+        if (!tower.is_changed())
+            continue;
+        if (tower.destroy())
+        {
+            output.add_tower(tower, TOWER_DESTROY_TYPE, tower.get_attack());
+            tower.set_unchanged_before_another_round();
+            continue;
+        }
+        if (tower.is_changed())
         {
             output.add_tower(tower, tower.get_type(), tower.get_attack());
             tower.set_unchanged_before_another_round();
@@ -1385,7 +1662,11 @@ void Game::dump_last_round(
 {
     for (auto tower : defensive_towers)
     {
-        if (tower.is_changed())
+        if (tower.is_changed() && tower.destroy())
+        {
+            output.add_tower(tower, TOWER_DESTROY_TYPE, tower.get_attack());
+        }
+        else if (tower.is_changed())
         {
             output.add_tower(tower, tower.get_type(), tower.get_attack());
         }

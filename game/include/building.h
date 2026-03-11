@@ -47,6 +47,10 @@ enum TowerType {
     MortarPlus = 31,
     Pulse = 32,
     Missile = 33,
+    Producer = 4,
+    ProducerFast = 41,
+    ProducerSiege = 42,
+    ProducerMedic = 43,
 };
 
 class DefenseTower : public Building {
@@ -56,9 +60,12 @@ class DefenseTower : public Building {
     int damage = 5;
     double spd = 2;
     int range = 2;
+    int hp = 10;
+    int hp_limit = 10;
     int attack_pos_x, attack_pos_y;
     bool changed;
     std::vector<int> attacked_ants;
+    void set_stats_for_type(TowerType tower_type_);
 
   public:
     double multiple = 1.0;
@@ -73,6 +80,8 @@ class DefenseTower : public Building {
     int get_damage() const { return (int)(damage * multiple); }
     int get_spd() const { return spd; }
     int get_cd() const {
+        if (is_producer())
+            return std::max(get_spawn_interval() - round, 0);
         if (spd < 1)
             return 0;
         return std::max((int)(spd - round), 0);
@@ -80,9 +89,17 @@ class DefenseTower : public Building {
     int get_level() const { return level; }
     TowerType get_type() const { return tower_type; }
     int get_range() const { return range; }
+    int get_hp() const { return hp; }
+    int get_hp_limit() const { return hp_limit; }
+    bool is_producer() const;
+    int get_spawn_interval() const;
+    int get_support_range() const;
+    double get_siege_spawn_chance() const;
+    int get_heal_amount() const;
     bool downgrade(TowerType tower_type_);
     bool is_changed() const {return changed;}
     const std::vector<int>& get_attack() const {return attacked_ants;}
+    bool take_damage(int amount);
 
     virtual ~DefenseTower(){};
     Ant *find_attack_target(std::vector<Ant> &ants);

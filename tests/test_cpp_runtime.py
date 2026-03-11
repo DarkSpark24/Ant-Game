@@ -107,8 +107,13 @@ def test_cpp_game_decodes_length_prefixed_ai_operations(tmp_path: Path) -> None:
     replay = json.loads(replay_path.read_text())
     assert any(op["type"] == 11 for entry in replay for op in entry.get("op0", []))
     assert any(
-        tower["pos"]["x"] == 6 and tower["pos"]["y"] == 9
+        tower["pos"]["x"] == 6 and tower["pos"]["y"] == 9 and "hp" in tower
         for entry in replay
         for tower in entry.get("round_state", {}).get("towers", [])
+    )
+    assert any(
+        ant.get("kind") == 0
+        for entry in replay
+        for ant in entry.get("round_state", {}).get("ants", [])
     )
     assert all("pheromone" not in entry.get("round_state", {}) for entry in replay)

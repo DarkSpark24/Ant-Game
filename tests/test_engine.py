@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from SDK.utils.constants import LAMBDA_DENOM, LAMBDA_NUM, PHEROMONE_FAIL_BONUS_INT, TAU_BASE_ADD_INT
-from SDK.utils.constants import ANT_TELEPORT_INTERVAL, AntBehavior, AntStatus, OperationType, PATH_CELLS, SPECIAL_BEHAVIOR_DECAY_TURNS, SPAWN_BEHAVIOR_WEIGHTS, SuperWeaponType, TowerType
+from SDK.utils.constants import ANT_TELEPORT_INTERVAL, AntBehavior, AntKind, AntStatus, OperationType, PATH_CELLS, PLAYER_BASES, SPECIAL_BEHAVIOR_DECAY_TURNS, SPAWN_BEHAVIOR_WEIGHTS, SuperWeaponType, TowerType
 from SDK.backend.engine import GameState, PublicRoundState
 from SDK.backend.model import Ant, Operation, Tower, WeaponEffect
+from SDK.utils.geometry import direction_between, hex_distance, is_path, neighbors
 
 
 def test_initial_round_spawns_ants_and_advances_time() -> None:
@@ -120,6 +121,47 @@ def test_control_free_ant_ignores_control_and_teleport() -> None:
     state.round_index = ANT_TELEPORT_INTERVAL - 1
     state._teleport_ants()
     assert (immune.x, immune.y) == original
+
+
+def test_move_progress_score_penalizes_stalling_relative_to_advancing() -> None:
+    state = GameState.initial(seed=13)
+    target_x, target_y = PLAYER_BASES[1]
+    advance_score = stall_score = None
+    for x, y in PATH_CELLS:
+        ant = Ant(0, 0, x, y, hp=10, level=0, behavior=AntBehavior.DEFAULT)
+        current_distance = hex_distance(ant.x, ant.y, target_x, target_y)
+        local_advance = None
+        local_stall = None
+        for _, nx, ny in neighbors(ant.x, ant.y):
+            if (nx, ny) != (target_x, target_y) and not is_path(nx, ny):
+                continue
+            next_distance = hex_distance(nx, ny, target_x, target_y)
+            score = state._move_progress_score(ant, nx, ny, target_x, target_y)
+            if next_distance < current_distance and local_advance is None:
+                local_advance = score
+            if next_distance == current_distance and local_stall is None:
+                local_stall = score
+        if local_advance is not None and local_stall is not None:
+            advance_score = local_advance
+            stall_score = local_stall
+            break
+    assert advance_score is not None
+    assert stall_score is not None
+    assert stall_score < 0.0
+    assert advance_score > stall_score
+
+
+def test_default_ant_prefers_advancing_move_on_clear_path() -> None:
+    advancing = 0
+    for seed in range(16):
+        state = GameState.initial(seed=seed)
+        ant = Ant(0, 0, 7, 9, hp=10, level=0, behavior=AntBehavior.DEFAULT)
+        before = hex_distance(ant.x, ant.y, *PLAYER_BASES[1])
+        state._resolve_ant_step(ant, state._choose_ant_move(ant))
+        after = hex_distance(ant.x, ant.y, *PLAYER_BASES[1])
+        if after < before:
+            advancing += 1
+    assert advancing >= 12
 
 
 def test_teleport_keeps_own_half_ant_in_own_half() -> None:
@@ -244,6 +286,23 @@ def test_sync_public_round_state_maps_frozen_status_to_hidden_flag() -> None:
     assert synced.pending_behavior == AntBehavior.RANDOM
 
 
+def test_sync_public_round_state_accepts_optional_tower_hp_and_ant_kind_fields() -> None:
+    state = GameState.initial(seed=8)
+    public_state = PublicRoundState(
+        round_index=3,
+        towers=[(5, 1, 12, 9, int(TowerType.BASIC), 2, 7)],
+        ants=[(11, 0, 4, 9, 10, 0, 6, int(AntStatus.ALIVE), int(AntBehavior.DEFAULT), int(AntKind.COMBAT))],
+        coins=(61, 44),
+        camps_hp=(49, 50),
+    )
+    state.sync_public_round_state(public_state)
+    assert state.round_index == 3
+    assert state.towers[0].tower_id == 5
+    assert state.towers[0].hp == 7
+    assert state.ants[0].ant_id == 11
+    assert state.ants[0].kind == AntKind.COMBAT
+
+
 def test_update_pheromone_walks_backwards_from_current_position() -> None:
     state = GameState.initial(seed=1)
     ant = Ant(
@@ -334,3 +393,50 @@ def test_terminal_round_stops_before_spawn_and_income() -> None:
     assert state.round_index == 1
     assert state.coins == [55, 50]
     assert state.ants == []
+
+
+def test_worker_ant_virtual_attack_damages_tower_without_moving() -> None:
+    state = GameState.initial(seed=2)
+    tower = Tower(0, 1, 12, 9, TowerType.BASIC, cooldown_clock=2.0, hp=10)
+    ant = Ant(21, 0, 11, 9, hp=10, level=0)
+    state.towers.append(tower)
+    state.ants.append(ant)
+    direction = direction_between(ant.x, ant.y, tower.x, tower.y)
+    state._resolve_ant_step(ant, direction)
+    assert (ant.x, ant.y) == (11, 9)
+    assert ant.last_move == -1
+    assert tower.hp == 9
+
+
+def test_combat_ant_kamikaze_breaks_low_hp_tower() -> None:
+    state = GameState.initial(seed=3)
+    tower = Tower(0, 1, 12, 9, TowerType.BASIC, cooldown_clock=2.0, hp=4)
+    ant = Ant(22, 0, 11, 9, hp=10, level=0, kind=AntKind.COMBAT)
+    ant.grant_evasion(2, grant_control_free_on_deplete=True)
+    state.towers.append(tower)
+    state.ants.append(ant)
+    direction = direction_between(ant.x, ant.y, tower.x, tower.y)
+    state._resolve_ant_step(ant, direction)
+    assert ant.hp <= 0
+    assert state.towers == []
+
+
+def test_producer_tower_can_spawn_combat_ant_with_profile() -> None:
+    state = GameState.initial(seed=4)
+    tower = Tower(0, 0, 6, 9, TowerType.PRODUCER_SIEGE, cooldown_clock=0.0)
+    state.towers.append(tower)
+    state._spawn_ant_from_tower(tower, AntKind.COMBAT)
+    assert len(state.ants) == 1
+    spawned = state.ants[0]
+    assert spawned.kind == AntKind.COMBAT
+    assert spawned.shield == 2
+    assert spawned.move_weights.tower_pull > 0
+
+
+def test_public_round_state_serializes_tower_hp_and_ant_kind() -> None:
+    state = GameState.initial(seed=9)
+    state.towers.append(Tower(0, 0, 6, 9, TowerType.BASIC, cooldown_clock=1.0, hp=7))
+    state.ants.append(Ant(30, 0, 2, 9, hp=10, level=0, kind=AntKind.COMBAT))
+    public_state = state.to_public_round_state()
+    assert public_state.towers[0][6] == 7
+    assert public_state.ants[0][9] == int(AntKind.COMBAT)

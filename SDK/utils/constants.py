@@ -86,11 +86,17 @@ class AntBehavior(IntEnum):
     CONTROL_FREE = 4
 
 
+class AntKind(IntEnum):
+    WORKER = 0
+    COMBAT = 1
+
+
 class TowerType(IntEnum):
     BASIC = 0
     HEAVY = 1
     QUICK = 2
     MORTAR = 3
+    PRODUCER = 4
     HEAVY_PLUS = 11
     ICE = 12
     CANNON = 13
@@ -100,6 +106,9 @@ class TowerType(IntEnum):
     MORTAR_PLUS = 31
     PULSE = 32
     MISSILE = 33
+    PRODUCER_FAST = 41
+    PRODUCER_SIEGE = 42
+    PRODUCER_MEDIC = 43
 
 
 class SuperWeaponType(IntEnum):
@@ -126,6 +135,21 @@ class TowerStats:
     damage: int
     speed: float
     attack_range: int
+    max_hp: int
+    spawn_interval: int = 0
+    support_range: int = 0
+    siege_spawn_chance: float = 0.0
+    heal_amount: int = 0
+
+
+@dataclass(frozen=True)
+class MoveWeights:
+    progress: float
+    pheromone: float
+    crowding: float
+    expected_damage: float
+    control_risk: float
+    tower_pull: float
 
 
 @dataclass(frozen=True)
@@ -137,26 +161,31 @@ class WeaponStats:
 
 
 TOWER_STATS = {
-    TowerType.BASIC: TowerStats(5, 2.0, 2),
-    TowerType.HEAVY: TowerStats(20, 2.0, 2),
-    TowerType.QUICK: TowerStats(6, 1.0, 3),
-    TowerType.MORTAR: TowerStats(16, 4.0, 3),
-    TowerType.HEAVY_PLUS: TowerStats(35, 2.0, 3),
-    TowerType.ICE: TowerStats(15, 2.0, 2),
-    TowerType.CANNON: TowerStats(10, 3.0, 3),
-    TowerType.QUICK_PLUS: TowerStats(8, 0.5, 3),
-    TowerType.DOUBLE: TowerStats(7, 1.0, 4),
-    TowerType.SNIPER: TowerStats(15, 2.0, 6),
-    TowerType.MORTAR_PLUS: TowerStats(35, 4.0, 4),
-    TowerType.PULSE: TowerStats(12, 3.0, 2),
-    TowerType.MISSILE: TowerStats(45, 6.0, 5),
+    TowerType.BASIC: TowerStats(5, 2.0, 2, 10),
+    TowerType.HEAVY: TowerStats(20, 2.0, 2, 10),
+    TowerType.QUICK: TowerStats(6, 1.0, 3, 10),
+    TowerType.MORTAR: TowerStats(16, 4.0, 3, 10),
+    TowerType.PRODUCER: TowerStats(0, 0.0, 0, 10, spawn_interval=4),
+    TowerType.HEAVY_PLUS: TowerStats(35, 2.0, 3, 10),
+    TowerType.ICE: TowerStats(15, 2.0, 2, 10),
+    TowerType.CANNON: TowerStats(10, 3.0, 3, 10),
+    TowerType.QUICK_PLUS: TowerStats(8, 0.5, 3, 10),
+    TowerType.DOUBLE: TowerStats(7, 1.0, 4, 10),
+    TowerType.SNIPER: TowerStats(15, 2.0, 6, 10),
+    TowerType.MORTAR_PLUS: TowerStats(35, 4.0, 4, 10),
+    TowerType.PULSE: TowerStats(12, 3.0, 2, 10),
+    TowerType.MISSILE: TowerStats(45, 6.0, 5, 10),
+    TowerType.PRODUCER_FAST: TowerStats(0, 0.0, 0, 10, spawn_interval=2),
+    TowerType.PRODUCER_SIEGE: TowerStats(0, 0.0, 0, 10, spawn_interval=4, siege_spawn_chance=0.25),
+    TowerType.PRODUCER_MEDIC: TowerStats(0, 0.0, 0, 10, spawn_interval=4, support_range=4, heal_amount=4),
 }
 
 TOWER_UPGRADE_TREE = {
-    TowerType.BASIC: (TowerType.HEAVY, TowerType.QUICK, TowerType.MORTAR),
+    TowerType.BASIC: (TowerType.HEAVY, TowerType.QUICK, TowerType.MORTAR, TowerType.PRODUCER),
     TowerType.HEAVY: (TowerType.HEAVY_PLUS, TowerType.ICE, TowerType.CANNON),
     TowerType.QUICK: (TowerType.QUICK_PLUS, TowerType.DOUBLE, TowerType.SNIPER),
     TowerType.MORTAR: (TowerType.MORTAR_PLUS, TowerType.PULSE, TowerType.MISSILE),
+    TowerType.PRODUCER: (TowerType.PRODUCER_FAST, TowerType.PRODUCER_SIEGE, TowerType.PRODUCER_MEDIC),
 }
 
 SUPER_WEAPON_STATS = {
@@ -195,13 +224,38 @@ LAMBDA_NUM = 97
 LAMBDA_DENOM = 100
 TAU_BASE_ADD_INT = 3000  # 0.03 * 10 * PHEROMONE_SCALE
 MAX_ACTIONS = 96
-DEFAULT_MOVE_TEMPERATURE = 4.0
+DEFAULT_MOVE_TEMPERATURE = 1.75
 BEWITCH_MOVE_TEMPERATURE = 1.5
 CROWDING_PENALTY = 1.25
 RANDOM_ANT_DECAY_TURNS = 5
 SPECIAL_BEHAVIOR_DECAY_TURNS = 5
 ANT_TELEPORT_INTERVAL = 10
 ANT_TELEPORT_RATIO = 0.2
+STALL_MOVE_PENALTY = 0.35
+RETREAT_MOVE_PENALTY = 0.8
+TARGET_PULL_DISTANCE_SCALE = 0.18
+WORKER_TOWER_ATTACK_DAMAGE = (1, 2, 4)
+COMBAT_TOWER_ATTACK_DAMAGE = 3
+TOWER_KAMIKAZE_HP_THRESHOLD = 5
+
+MOVE_PROFILE_WEIGHTS = {
+    AntKind.WORKER: MoveWeights(
+        progress=1.0,
+        pheromone=0.3,
+        crowding=0.35,
+        expected_damage=1.15,
+        control_risk=0.85,
+        tower_pull=0.0,
+    ),
+    AntKind.COMBAT: MoveWeights(
+        progress=0.7,
+        pheromone=0.1,
+        crowding=0.25,
+        expected_damage=0.8,
+        control_risk=0.35,
+        tower_pull=1.35,
+    ),
+}
 
 SPAWN_BEHAVIOR_WEIGHTS = (
     (AntBehavior.DEFAULT, 0.4),

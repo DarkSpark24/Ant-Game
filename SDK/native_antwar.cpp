@@ -149,6 +149,7 @@ std::vector<std::vector<int>> tower_rows(const Game &game) {
             tower.get_y(),
             static_cast<int>(tower.get_type()),
             tower.get_cd(),
+            tower.get_hp(),
         });
     }
     return rows;
@@ -167,6 +168,8 @@ std::vector<std::vector<int>> ant_rows(const Game &game) {
             ant.get_level(),
             ant.age,
             static_cast<int>(ant.get_status()),
+            static_cast<int>(ant.get_behavior()),
+            static_cast<int>(ant.get_kind()),
         });
     }
     return rows;
@@ -350,12 +353,14 @@ struct NativeState {
             const int y = row[3];
             const TowerType tower_type = static_cast<TowerType>(row[4]);
             const int cooldown = row[5];
+            const int hp = row.size() >= 7 ? row[6] : 10;
             game.defensive_towers.emplace_back(x, y, player, tower_id, 0);
             auto &tower = game.defensive_towers.back();
             if (tower_type != TowerType::Basic)
                 tower.upgrade(tower_type);
             tower.level = tower_level_from_type(tower_type);
             tower.round = display_cooldown_to_round(tower, cooldown);
+            tower.hp = hp;
             tower.changed = false;
             tower.attacked_ants.clear();
             max_tower_id = std::max(max_tower_id, tower_id + 1);
@@ -374,7 +379,10 @@ struct NativeState {
             const int hp = row[4];
             const int level = row[5];
             const int public_age = row[6];
-            game.ants.emplace_back(player, ant_id, x, y, level);
+            const Ant::Kind kind =
+                row.size() >= 10 ? static_cast<Ant::Kind>(row[9])
+                                 : Ant::Kind::Worker;
+            game.ants.emplace_back(player, ant_id, x, y, level, kind);
             auto &ant = game.ants.back();
             auto it = previous_ants.find(ant_id);
             if (it != previous_ants.end()) {
@@ -419,6 +427,7 @@ struct NativeState {
                     ant.target_y = -1;
                 }
             }
+            ant.set_kind(kind);
             max_ant_id = std::max(max_ant_id, ant_id + 1);
         }
         game.ant_id = max_ant_id;
