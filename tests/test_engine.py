@@ -30,6 +30,20 @@ def test_build_and_upgrade_tower_updates_coin_and_state() -> None:
     assert state.coins[0] == 40
 
 
+def test_max_level_base_upgrade_returns_zero_income_without_crashing() -> None:
+    state = GameState.initial(seed=12)
+    state.bases[0].generation_level = 2
+    state.bases[0].ant_level = 2
+
+    gen_upgrade = Operation(OperationType.UPGRADE_GENERATION_SPEED)
+    ant_upgrade = Operation(OperationType.UPGRADE_GENERATED_ANT)
+
+    assert not state.can_apply_operation(0, gen_upgrade)
+    assert not state.can_apply_operation(0, ant_upgrade)
+    assert state.operation_income(0, gen_upgrade) == 0
+    assert state.operation_income(0, ant_upgrade) == 0
+
+
 def test_quick_tower_attacks_enemy_ant() -> None:
     state = GameState.initial(seed=1)
     state.towers.append(Tower(0, 0, 6, 9, TowerType.QUICK, cooldown_clock=1.0))

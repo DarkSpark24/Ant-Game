@@ -9,7 +9,7 @@ from SDK.utils.actions import ActionCatalog
 from SDK.backend import load_backend
 from SDK.utils.constants import OperationType
 from SDK.backend.engine import GameState
-from SDK.backend.forecast import Ant as ForecastAnt, AntState as ForecastAntState, ForecastState
+from SDK.backend.forecast import Ant as ForecastAnt, AntState as ForecastAntState, ForecastState, Operation as ForecastOperation
 from SDK.backend.model import Ant
 
 
@@ -53,6 +53,23 @@ def test_action_catalog_tolerates_stale_ant_trails() -> None:
     catalog = ActionCatalog(max_actions=16)
     bundles = catalog.build(state, 0)
     assert bundles
+
+
+def test_action_catalog_skips_max_level_base_upgrades() -> None:
+    state = GameState.initial(seed=6)
+    state.coins[0] = 9999
+    state.bases[0].generation_level = 2
+    state.bases[0].ant_level = 2
+
+    catalog = ActionCatalog(max_actions=64)
+    bundles = catalog.build(state, 0)
+
+    assert bundles
+    assert all(
+        op.op_type not in (OperationType.UPGRADE_GENERATION_SPEED, OperationType.UPGRADE_GENERATED_ANT)
+        for bundle in bundles
+        for op in bundle.operations
+    )
 
 
 def test_mcts_module_is_self_contained() -> None:
@@ -140,3 +157,17 @@ def test_greedy_rollout_pheromone_update_tolerates_teleported_ant_trails() -> No
     info.update_pheromone(info.ants[0])
     assert info.pheromone[0][3][9] < before_origin
     assert info.pheromone[0][18][9] < before_target
+
+
+def test_forecast_max_level_base_upgrade_returns_zero_income() -> None:
+    info = ForecastState(23)
+    info.bases[0].gen_speed_level = 2
+    info.bases[0].ant_level = 2
+
+    gen_upgrade = ForecastOperation(OperationType.UPGRADE_GENERATION_SPEED)
+    ant_upgrade = ForecastOperation(OperationType.UPGRADE_GENERATED_ANT)
+
+    assert not info.is_operation_valid(0, gen_upgrade)
+    assert not info.is_operation_valid(0, ant_upgrade)
+    assert info.get_operation_income(0, gen_upgrade) == 0
+    assert info.get_operation_income(0, ant_upgrade) == 0

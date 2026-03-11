@@ -534,9 +534,11 @@ class GameInfo:
         ):
             return -self.use_super_weapon_cost(int(op.type) % 10)
         if op.type == OperationType.UPGRADE_GENERATION_SPEED:
-            return -self.upgrade_base_cost(self.bases[player].gen_speed_level)
+            level = self.bases[player].gen_speed_level
+            return -self.upgrade_base_cost(level) if level < len(BASE_UPGRADE_COST) else 0
         if op.type == OperationType.UPGRADE_GENERATED_ANT:
-            return -self.upgrade_base_cost(self.bases[player].ant_level)
+            level = self.bases[player].ant_level
+            return -self.upgrade_base_cost(level) if level < len(BASE_UPGRADE_COST) else 0
         return 0
 
     def check_affordable(self, player: int, ops: Sequence[Operation]) -> bool:

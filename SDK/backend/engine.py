@@ -322,9 +322,11 @@ class GameState:
         ):
             return -self.weapon_cost(SuperWeaponType(operation.op_type % 10))
         if operation.op_type == OperationType.UPGRADE_GENERATION_SPEED:
-            return -self.upgrade_base_cost(self.bases[player].generation_level)
+            level = self.bases[player].generation_level
+            return -self.upgrade_base_cost(level) if level < len(BASE_UPGRADE_COST) else 0
         if operation.op_type == OperationType.UPGRADE_GENERATED_ANT:
-            return -self.upgrade_base_cost(self.bases[player].ant_level)
+            level = self.bases[player].ant_level
+            return -self.upgrade_base_cost(level) if level < len(BASE_UPGRADE_COST) else 0
         return 0
 
     def operation_income(self, player: int, operation: Operation, tower_count_hint: int | None = None) -> int:
