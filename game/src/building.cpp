@@ -3,7 +3,7 @@
 #include <algorithm>
 
 
-const int cd_list[3] = {4, 2, 1};
+const int cd_list[3] = {4, 3, 2};
 // judge whether ant can be generated
 bool Headquarter::create_new_ant(int round) {
     if (!(round % cd_list[cd_level])) {
@@ -147,81 +147,97 @@ void DefenseTower::set_stats_for_type(TowerType tower_type_) {
         damage = 20;
         spd = 2;
         range = 2;
+        hp_limit = 15;
         break;
     case TowerType::Quick:
         damage = 6;
         spd = 1;
         range = 3;
+        hp_limit = 15;
         break;
     case TowerType::Mortar:
         damage = 16;
         spd = 4;
         range = 3;
+        hp_limit = 15;
         break;
     case TowerType::Producer:
         damage = 0;
         spd = 4;
         range = 0;
+        hp_limit = 15;
         break;
     case TowerType::HeavyPlus:
         damage = 35;
         spd = 2;
         range = 3;
+        hp_limit = 15;
         break;
     case TowerType::Ice:
         damage = 15;
         spd = 2;
         range = 2;
+        hp_limit = 15;
         break;
     case TowerType::Cannon:
         damage = 10;
         spd = 3;
         range = 3;
+        hp_limit = 15;
         break;
     case TowerType::QuickPlus:
         damage = 8;
         spd = 0.5;
         range = 3;
+        hp_limit = 15;
         break;
     case TowerType::Double:
         damage = 7;
         spd = 1;
         range = 4;
+        hp_limit = 15;
         break;
     case TowerType::Sniper:
         damage = 15;
         spd = 2;
         range = 6;
+        hp_limit = 15;
         break;
     case TowerType::MortarPlus:
         damage = 35;
         spd = 4;
         range = 4;
+        hp_limit = 15;
         break;
     case TowerType::Pulse:
         damage = 12;
         spd = 3;
         range = 2;
+        hp_limit = 15;
         break;
     case TowerType::Missile:
         damage = 45;
         spd = 6;
         range = 5;
+        hp_limit = 15;
         break;
     case TowerType::ProducerFast:
         damage = 0;
         spd = 2;
         range = 0;
+        hp_limit = 15;
         break;
     case TowerType::ProducerSiege:
         damage = 0;
         spd = 4;
         range = 0;
+        hp_limit = 15;
         break;
     case TowerType::ProducerMedic:
         damage = 0;
         spd = 4;
         range = 4;
+        hp_limit = 15;
         break;
     default:
         break;

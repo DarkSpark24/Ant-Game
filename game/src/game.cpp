@@ -36,6 +36,16 @@ constexpr double RETREAT_MOVE_PENALTY = 0.8;
 constexpr double TARGET_PULL_DISTANCE_SCALE = 0.18;
 constexpr int TOWER_KAMIKAZE_HP_THRESHOLD = 5;
 constexpr double SPAWN_BEHAVIOR_PROBS[4] = {0.4, 0.3, 0.25, 0.05};
+struct SpawnProfile {
+    Ant::Kind kind;
+    Ant::Behavior behavior;
+};
+constexpr SpawnProfile SPAWN_PROFILES[4] = {
+    {Ant::Kind::Worker, Ant::Behavior::Default},
+    {Ant::Kind::Worker, Ant::Behavior::Conservative},
+    {Ant::Kind::Worker, Ant::Behavior::Randomized},
+    {Ant::Kind::Combat, Ant::Behavior::Default},
+};
 constexpr std::size_t MAX_JUDGER_PACKET_SIZE = 16 * 1024 * 1024;
 const int ant_dx[2][6][2] = {
     {{0, 1}, {-1, 0}, {0, -1}, {1, -1}, {1, 0}, {1, 1}},
@@ -756,19 +766,15 @@ void Game::move_ants()
 
 void Game::generate_ants()
 {
-    auto draw_spawn_behavior = [this]() {
+    auto draw_spawn_profile = [this]() {
         double roll = random_float();
         double cumulative = 0.0;
-        Ant::Behavior behaviors[4] = {Ant::Behavior::Default,
-                                      Ant::Behavior::Conservative,
-                                      Ant::Behavior::Randomized,
-                                      Ant::Behavior::ControlFree};
         for (int i = 0; i < 4; ++i) {
             cumulative += SPAWN_BEHAVIOR_PROBS[i];
             if (roll <= cumulative)
-                return behaviors[i];
+                return SPAWN_PROFILES[i];
         }
-        return Ant::Behavior::ControlFree;
+        return SPAWN_PROFILES[3];
     };
 
     auto choose_spawn_cell = [this](const DefenseTower &tower) {
@@ -796,7 +802,8 @@ void Game::generate_ants()
         return best;
     };
 
-    auto spawn_from_tower = [&](const DefenseTower &tower, Ant::Kind kind) {
+    auto spawn_from_tower = [&](const DefenseTower &tower, Ant::Kind kind,
+                                Ant::Behavior behavior) {
         auto cell = choose_spawn_cell(tower);
         if (!ant_can_walk_to(cell.first, cell.second))
             return;
@@ -805,7 +812,7 @@ void Game::generate_ants()
         ants.push_back(Ant(tower.get_player(), ant_id, cell.first, cell.second,
                            ant_level, kind));
         ants.back().trail_cells = {Pos(cell.first, cell.second)};
-        ants.back().set_behavior(draw_spawn_behavior());
+        ants.back().set_behavior(behavior);
         if (kind == Ant::Kind::Combat)
             grant_emergency_evasion(ants.back(), 2, true);
         output.add_ant(ants.back());
@@ -814,19 +821,25 @@ void Game::generate_ants()
 
     if (base_camp0.create_new_ant(round))
     {
-
+        SpawnProfile profile = draw_spawn_profile();
         ants.push_back(Ant(base_camp0.get_player(), ant_id, base_camp0.get_x(),
-                           base_camp0.get_y(), base_camp0.get_ant_level()));
-        ants.back().set_behavior(draw_spawn_behavior());
+                           base_camp0.get_y(), base_camp0.get_ant_level(),
+                           profile.kind));
+        ants.back().set_behavior(profile.behavior);
+        if (profile.kind == Ant::Kind::Combat)
+            grant_emergency_evasion(ants.back(), 2, true);
         output.add_ant(ants.back());
         ant_id++;
     }
     if (base_camp1.create_new_ant(round))
     {
-
+        SpawnProfile profile = draw_spawn_profile();
         ants.push_back(Ant(base_camp1.get_player(), ant_id, base_camp1.get_x(),
-                           base_camp1.get_y(), base_camp1.get_ant_level()));
-        ants.back().set_behavior(draw_spawn_behavior());
+                           base_camp1.get_y(), base_camp1.get_ant_level(),
+                           profile.kind));
+        ants.back().set_behavior(profile.behavior);
+        if (profile.kind == Ant::Kind::Combat)
+            grant_emergency_evasion(ants.back(), 2, true);
         output.add_ant(ants.back());
         ant_id++;
     }
@@ -841,10 +854,11 @@ void Game::generate_ants()
         tower.round++;
         if (tower.round < tower.get_spawn_interval())
             continue;
-        spawn_from_tower(tower, Ant::Kind::Worker);
+        SpawnProfile profile = draw_spawn_profile();
+        spawn_from_tower(tower, profile.kind, profile.behavior);
         if (tower.get_type() == TowerType::ProducerSiege &&
             random_float() <= tower.get_siege_spawn_chance()) {
-            spawn_from_tower(tower, Ant::Kind::Combat);
+            spawn_from_tower(tower, Ant::Kind::Combat, Ant::Behavior::Default);
         } else if (tower.get_type() == TowerType::ProducerMedic) {
             Pos enemy = tower.get_player() ? Pos(PLAYER_0_BASE_CAMP_X, PLAYER_0_BASE_CAMP_Y)
                                            : Pos(PLAYER_1_BASE_CAMP_X, PLAYER_1_BASE_CAMP_Y);

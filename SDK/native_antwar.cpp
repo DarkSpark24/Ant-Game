@@ -18,7 +18,7 @@ namespace py = pybind11;
 
 namespace {
 
-constexpr int INITIAL_COIN = 50;
+constexpr int INITIAL_COIN = 100;
 constexpr int SPECIAL_BEHAVIOR_DECAY_TURNS = 5;
 
 int default_behavior_expiry(Ant::Behavior behavior) {
@@ -103,8 +103,8 @@ void init_game(Game &game, unsigned long long seed) {
     game.player1.ant_target_y = PLAYER_0_BASE_CAMP_Y;
     game.player0.coin.coin = INITIAL_COIN;
     game.player1.coin.coin = INITIAL_COIN;
-    game.player0.coin.basic_income = 1;
-    game.player1.coin.basic_income = 1;
+    game.player0.coin.basic_income = 2;
+    game.player1.coin.basic_income = 2;
     game.player0.coin.tower_building_price = 15;
     game.player1.coin.tower_building_price = 15;
     game.player0.coin.penalty = 0;

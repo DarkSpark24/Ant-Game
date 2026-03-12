@@ -162,22 +162,22 @@ class WeaponStats:
 
 TOWER_STATS = {
     TowerType.BASIC: TowerStats(5, 2.0, 2, 10),
-    TowerType.HEAVY: TowerStats(20, 2.0, 2, 10),
-    TowerType.QUICK: TowerStats(6, 1.0, 3, 10),
-    TowerType.MORTAR: TowerStats(16, 4.0, 3, 10),
-    TowerType.PRODUCER: TowerStats(0, 0.0, 0, 10, spawn_interval=4),
-    TowerType.HEAVY_PLUS: TowerStats(35, 2.0, 3, 10),
-    TowerType.ICE: TowerStats(15, 2.0, 2, 10),
-    TowerType.CANNON: TowerStats(10, 3.0, 3, 10),
-    TowerType.QUICK_PLUS: TowerStats(8, 0.5, 3, 10),
-    TowerType.DOUBLE: TowerStats(7, 1.0, 4, 10),
-    TowerType.SNIPER: TowerStats(15, 2.0, 6, 10),
-    TowerType.MORTAR_PLUS: TowerStats(35, 4.0, 4, 10),
-    TowerType.PULSE: TowerStats(12, 3.0, 2, 10),
-    TowerType.MISSILE: TowerStats(45, 6.0, 5, 10),
-    TowerType.PRODUCER_FAST: TowerStats(0, 0.0, 0, 10, spawn_interval=2),
-    TowerType.PRODUCER_SIEGE: TowerStats(0, 0.0, 0, 10, spawn_interval=4, siege_spawn_chance=0.25),
-    TowerType.PRODUCER_MEDIC: TowerStats(0, 0.0, 0, 10, spawn_interval=4, support_range=4, heal_amount=4),
+    TowerType.HEAVY: TowerStats(20, 2.0, 2, 15),
+    TowerType.QUICK: TowerStats(6, 1.0, 3, 15),
+    TowerType.MORTAR: TowerStats(16, 4.0, 3, 15),
+    TowerType.PRODUCER: TowerStats(0, 0.0, 0, 15, spawn_interval=4),
+    TowerType.HEAVY_PLUS: TowerStats(35, 2.0, 3, 15),
+    TowerType.ICE: TowerStats(15, 2.0, 2, 15),
+    TowerType.CANNON: TowerStats(10, 3.0, 3, 15),
+    TowerType.QUICK_PLUS: TowerStats(8, 0.5, 3, 15),
+    TowerType.DOUBLE: TowerStats(7, 1.0, 4, 15),
+    TowerType.SNIPER: TowerStats(15, 2.0, 6, 15),
+    TowerType.MORTAR_PLUS: TowerStats(35, 4.0, 4, 15),
+    TowerType.PULSE: TowerStats(12, 3.0, 2, 15),
+    TowerType.MISSILE: TowerStats(45, 6.0, 5, 15),
+    TowerType.PRODUCER_FAST: TowerStats(0, 0.0, 0, 15, spawn_interval=2),
+    TowerType.PRODUCER_SIEGE: TowerStats(0, 0.0, 0, 15, spawn_interval=4, siege_spawn_chance=0.25),
+    TowerType.PRODUCER_MEDIC: TowerStats(0, 0.0, 0, 15, spawn_interval=4, support_range=4, heal_amount=4),
 }
 
 TOWER_UPGRADE_TREE = {
@@ -195,18 +195,19 @@ SUPER_WEAPON_STATS = {
     SuperWeaponType.EMERGENCY_EVASION: WeaponStats(1, 3, 50, 100),
 }
 
-ANT_MAX_HP = (10, 25, 50)
-ANT_KILL_REWARD = (3, 5, 7)
+ANT_MAX_HP = (20, 25, 30)
+ANT_KILL_REWARD = (6, 10, 14)
+ANT_BREACH_REWARD = 10
 ANT_AGE_LIMIT = 32
-ANT_GENERATION_CYCLE = (4, 2, 1)
+ANT_GENERATION_CYCLE = (4, 3, 2)
 BASE_UPGRADE_COST = (200, 250)
 TOWER_BUILD_BASE_COST = 15
 TOWER_BUILD_RATIO = 2
 LEVEL2_TOWER_UPGRADE_COST = 60
 LEVEL3_TOWER_UPGRADE_COST = 200
 TOWER_DOWNGRADE_REFUND_RATIO = 0.8
-BASIC_INCOME = 1
-INITIAL_COINS = 50
+BASIC_INCOME = 2
+INITIAL_COINS = 100
 # Pheromone: stored as int, real_value = pheromone_int / PHEROMONE_SCALE
 PHEROMONE_SCALE = 10000
 PHEROMONE_INIT = 10.0
@@ -257,11 +258,17 @@ MOVE_PROFILE_WEIGHTS = {
     ),
 }
 
+SPAWN_PROFILE_WEIGHTS = (
+    (AntKind.WORKER, AntBehavior.DEFAULT, 0.4),
+    (AntKind.WORKER, AntBehavior.CONSERVATIVE, 0.3),
+    (AntKind.WORKER, AntBehavior.RANDOM, 0.25),
+    (AntKind.COMBAT, AntBehavior.DEFAULT, 0.05),
+)
+
 SPAWN_BEHAVIOR_WEIGHTS = (
     (AntBehavior.DEFAULT, 0.4),
     (AntBehavior.CONSERVATIVE, 0.3),
     (AntBehavior.RANDOM, 0.25),
-    (AntBehavior.CONTROL_FREE, 0.05),
 )
 
 # These anchors are adapted from the curated high-ground order used by the greedy bot,

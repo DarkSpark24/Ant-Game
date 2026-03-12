@@ -9,6 +9,7 @@ import numpy as np
 from SDK.utils.constants import (
     AntKind,
     AntBehavior,
+    ANT_BREACH_REWARD,
     ANT_TELEPORT_INTERVAL,
     ANT_TELEPORT_RATIO,
     BASE_HP,
@@ -36,7 +37,7 @@ from SDK.utils.constants import (
     PLAYER_COUNT,
     RANDOM_ANT_DECAY_TURNS,
     RETREAT_MOVE_PENALTY,
-    SPAWN_BEHAVIOR_WEIGHTS,
+    SPAWN_PROFILE_WEIGHTS,
     STALL_MOVE_PENALTY,
     STRATEGIC_BUILD_ORDER,
     SUPER_WEAPON_STATS,
@@ -388,7 +389,12 @@ class GameState:
                 cells.append((nx, ny))
         return cells
 
-    def _spawn_ant_from_tower(self, tower: Tower, kind: AntKind) -> None:
+    def _initialize_spawned_ant(self, ant: Ant, behavior: AntBehavior) -> None:
+        ant.set_behavior(behavior)
+        if ant.kind == AntKind.COMBAT:
+            ant.grant_evasion(2, grant_control_free_on_deplete=True)
+
+    def _spawn_ant_from_tower(self, tower: Tower, kind: AntKind, behavior: AntBehavior) -> None:
         cells = self._spawn_cells_for_tower(tower)
         if not cells:
             return
@@ -416,9 +422,7 @@ class GameState:
         ant.x = best_x
         ant.y = best_y
         ant.trail_cells = [(best_x, best_y)]
-        ant.set_behavior(self._draw_spawn_behavior())
-        if kind == AntKind.COMBAT:
-            ant.grant_evasion(2, grant_control_free_on_deplete=True)
+        self._initialize_spawned_ant(ant, behavior)
         self.ants.append(ant)
         self.next_ant_id += 1
 
@@ -937,7 +941,7 @@ class GameState:
             ant.refresh_status()
             if ant.status == AntStatus.SUCCESS:
                 self.bases[1 - ant.player].hp -= 1
-                self.coins[ant.player] += 5
+                self.coins[ant.player] += ANT_BREACH_REWARD
                 if self._judge_base_camps():
                     remaining.extend(self.ants[index + 1 :])
                     base_destroyed = True
@@ -960,20 +964,22 @@ class GameState:
             remaining = survivors
         self.ants = remaining
 
-    def _draw_spawn_behavior(self) -> AntBehavior:
+    def _draw_spawn_profile(self) -> tuple[AntKind, AntBehavior]:
         roll = self._random_float()
         cumulative = 0.0
-        for behavior, probability in SPAWN_BEHAVIOR_WEIGHTS:
+        for kind, behavior, probability in SPAWN_PROFILE_WEIGHTS:
             cumulative += probability
             if roll <= cumulative:
-                return behavior
-        return SPAWN_BEHAVIOR_WEIGHTS[-1][0]
+                return kind, behavior
+        fallback_kind, fallback_behavior, _ = SPAWN_PROFILE_WEIGHTS[-1]
+        return fallback_kind, fallback_behavior
 
     def _spawn_ants(self) -> None:
         for base in self.bases:
             if base.should_spawn(self.round_index):
-                ant = base.spawn_ant(self.next_ant_id)
-                ant.set_behavior(self._draw_spawn_behavior())
+                kind, behavior = self._draw_spawn_profile()
+                ant = base.spawn_ant(self.next_ant_id, kind=kind)
+                self._initialize_spawned_ant(ant, behavior)
                 self.ants.append(ant)
                 self.next_ant_id += 1
         for tower in self.towers:
@@ -984,10 +990,11 @@ class GameState:
             tower.tick()
             if not tower.ready_to_fire():
                 continue
-            self._spawn_ant_from_tower(tower, AntKind.WORKER)
+            kind, behavior = self._draw_spawn_profile()
+            self._spawn_ant_from_tower(tower, kind, behavior)
             if tower.tower_type == TowerType.PRODUCER_SIEGE:
                 if self._random_float() <= tower.stats.siege_spawn_chance:
-                    self._spawn_ant_from_tower(tower, AntKind.COMBAT)
+                    self._spawn_ant_from_tower(tower, AntKind.COMBAT, AntBehavior.DEFAULT)
             elif tower.tower_type == TowerType.PRODUCER_MEDIC:
                 self._support_frontline_ant(tower)
             tower.reset_cooldown()
@@ -1078,11 +1085,11 @@ class GameState:
 
     def to_public_round_state(self) -> PublicRoundState:
         towers = [
-            (tower.tower_id, tower.player, tower.x, tower.y, int(tower.tower_type), tower.display_cooldown(), tower.hp)
+            (tower.tower_id, tower.player, tower.x, tower.y, int(tower.tower_type), tower.display_cooldown())
             for tower in sorted(self.towers, key=lambda item: item.tower_id)
         ]
         ants = [
-            (ant.ant_id, ant.player, ant.x, ant.y, ant.hp, ant.level, ant.age, int(ant.status), int(ant.behavior), int(ant.kind))
+            (ant.ant_id, ant.player, ant.x, ant.y, ant.hp, ant.level, ant.age, int(ant.status), int(ant.behavior))
             for ant in sorted(self.ants, key=lambda item: item.ant_id)
         ]
         return PublicRoundState(

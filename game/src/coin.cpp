@@ -2,8 +2,8 @@
 #include <cmath>
 #include <tuple>
 
-constexpr int INITIAL_COIN = 50, INITIAL_TOWER_BUILD_PRICE = 15,
-              INITIAL_BARRACK_BUILD_PRICE = 0, INITIAL_BASIC_INCOME = 1,
+constexpr int INITIAL_COIN = 100, INITIAL_TOWER_BUILD_PRICE = 15,
+              INITIAL_BARRACK_BUILD_PRICE = 0, INITIAL_BASIC_INCOME = 2,
               INITIAL_PENALTY = 0;
 constexpr float TOWER_PRICE_INCREASING_RATIO = 2,
                 BARRACK_PRICE_INCREASING_RATIO = 2;
@@ -27,11 +27,11 @@ std::tuple<bool, int> Coin::basic_income_and_penalty() const {
 
 void Coin::income_ant_kill(const Ant &killed_ant) {
     int level = killed_ant.get_level();
-    const int coin_list[3] = {3, 5, 7};
+    const int coin_list[3] = {6, 10, 14};
     coin += coin_list[level];
 }
 void Coin::income_ant_arrive() {
-    coin += 5;
+    coin += 10;
 }
 
 bool Coin::isEnough_tower_build() const { return coin >= tower_building_price; }

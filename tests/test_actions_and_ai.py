@@ -101,7 +101,7 @@ def test_native_backend_can_boot_and_advance() -> None:
     state.resolve_turn([], [])
     assert state.round_index == 1
     assert len(state.ants) == 2
-    assert state.coins == [51, 51]
+    assert state.coins == [102, 102]
 
 
 def test_random_runs_on_python_state_without_native_backend() -> None:

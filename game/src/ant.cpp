@@ -5,7 +5,7 @@
 #include <cassert>
 // Create an ant.
 
-const int hp_list[3] = {10, 25, 50};
+const int hp_list[3] = {20, 25, 30};
 namespace {
 constexpr int SPECIAL_BEHAVIOR_DECAY_TURNS = 5;
 constexpr int WORKER_TOWER_ATTACK_DAMAGE[3] = {1, 2, 4};

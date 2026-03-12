@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from SDK.utils.constants import LAMBDA_DENOM, LAMBDA_NUM, PHEROMONE_FAIL_BONUS_INT, TAU_BASE_ADD_INT
-from SDK.utils.constants import ANT_TELEPORT_INTERVAL, AntBehavior, AntKind, AntStatus, OperationType, PATH_CELLS, PLAYER_BASES, SPECIAL_BEHAVIOR_DECAY_TURNS, SPAWN_BEHAVIOR_WEIGHTS, SuperWeaponType, TowerType
+from SDK.utils.constants import ANT_TELEPORT_INTERVAL, AntBehavior, AntKind, AntStatus, OperationType, PATH_CELLS, PLAYER_BASES, SPECIAL_BEHAVIOR_DECAY_TURNS, SPAWN_PROFILE_WEIGHTS, SuperWeaponType, TowerType
 from SDK.backend.engine import GameState, PublicRoundState
 from SDK.backend.model import Ant, Operation, Tower, WeaponEffect
 from SDK.utils.geometry import direction_between, hex_distance, is_path, neighbors
@@ -12,7 +12,28 @@ def test_initial_round_spawns_ants_and_advances_time() -> None:
     state.resolve_turn([], [])
     assert state.round_index == 1
     assert len(state.ants) == 2
-    assert state.coins == [51, 51]
+    assert all(ant.hp == 20 for ant in state.ants)
+    assert state.coins == [102, 102]
+
+
+def test_base_upgrade_curves_match_spec() -> None:
+    state = GameState.initial(seed=1)
+    assert state.bases[0].should_spawn(0) is True
+    assert state.bases[0].should_spawn(1) is False
+    assert state.bases[0].should_spawn(3) is False
+    assert state.bases[0].spawn_ant(1).hp == 20
+
+    state.bases[0].generation_level = 1
+    state.bases[0].ant_level = 1
+    assert state.bases[0].should_spawn(3) is True
+    assert state.bases[0].should_spawn(2) is False
+    assert state.bases[0].spawn_ant(2).hp == 25
+
+    state.bases[0].generation_level = 2
+    state.bases[0].ant_level = 2
+    assert state.bases[0].should_spawn(4) is True
+    assert state.bases[0].should_spawn(3) is False
+    assert state.bases[0].spawn_ant(3).hp == 30
 
 
 def test_build_and_upgrade_tower_updates_coin_and_state() -> None:
@@ -20,7 +41,7 @@ def test_build_and_upgrade_tower_updates_coin_and_state() -> None:
     build = Operation(OperationType.BUILD_TOWER, 6, 9)
     assert state.can_apply_operation(0, build)
     assert state.apply_operation_list(0, [build]) == []
-    assert state.coins[0] == 35
+    assert state.coins[0] == 85
     tower = state.tower_at(6, 9)
     assert tower is not None
     upgrade = Operation(OperationType.UPGRADE_TOWER, tower.tower_id, int(TowerType.HEAVY))
@@ -28,6 +49,8 @@ def test_build_and_upgrade_tower_updates_coin_and_state() -> None:
     assert state.can_apply_operation(0, upgrade)
     assert state.apply_operation_list(0, [upgrade]) == []
     assert tower.tower_type == TowerType.HEAVY
+    assert tower.max_hp == 15
+    assert tower.hp == 15
     assert state.coins[0] == 40
 
 
@@ -188,12 +211,26 @@ def test_teleport_can_send_enemy_half_ant_anywhere_on_map() -> None:
     assert landed_outside_own_half
 
 
-def test_spawn_behavior_weights_match_spec() -> None:
-    weights = {behavior: probability for behavior, probability in SPAWN_BEHAVIOR_WEIGHTS}
-    assert weights[AntBehavior.DEFAULT] == 0.4
-    assert weights[AntBehavior.CONSERVATIVE] == 0.3
-    assert weights[AntBehavior.RANDOM] == 0.25
-    assert weights[AntBehavior.CONTROL_FREE] == 0.05
+def test_spawn_profile_weights_match_spec() -> None:
+    weights = {(kind, behavior): probability for kind, behavior, probability in SPAWN_PROFILE_WEIGHTS}
+    assert weights[(AntKind.WORKER, AntBehavior.DEFAULT)] == 0.4
+    assert weights[(AntKind.WORKER, AntBehavior.CONSERVATIVE)] == 0.3
+    assert weights[(AntKind.WORKER, AntBehavior.RANDOM)] == 0.25
+    assert weights[(AntKind.COMBAT, AntBehavior.DEFAULT)] == 0.05
+
+
+def test_natural_spawn_can_create_combat_ant_with_shield() -> None:
+    state = GameState.initial(seed=10)
+    original = GameState._draw_spawn_profile
+    GameState._draw_spawn_profile = lambda self: (AntKind.COMBAT, AntBehavior.DEFAULT)
+    try:
+        state._spawn_ants()
+    finally:
+        GameState._draw_spawn_profile = original
+    assert len(state.ants) == 2
+    assert all(ant.kind == AntKind.COMBAT for ant in state.ants)
+    assert all(ant.behavior == AntBehavior.DEFAULT for ant in state.ants)
+    assert all(ant.shield == 2 for ant in state.ants)
 
 
 def test_lightning_and_emp_effects_drift_each_tick() -> None:
@@ -391,7 +428,7 @@ def test_terminal_round_stops_before_spawn_and_income() -> None:
     assert state.terminal is True
     assert state.winner == 0
     assert state.round_index == 1
-    assert state.coins == [55, 50]
+    assert state.coins == [110, 100]
     assert state.ants == []
 
 
@@ -425,7 +462,7 @@ def test_producer_tower_can_spawn_combat_ant_with_profile() -> None:
     state = GameState.initial(seed=4)
     tower = Tower(0, 0, 6, 9, TowerType.PRODUCER_SIEGE, cooldown_clock=0.0)
     state.towers.append(tower)
-    state._spawn_ant_from_tower(tower, AntKind.COMBAT)
+    state._spawn_ant_from_tower(tower, AntKind.COMBAT, AntBehavior.DEFAULT)
     assert len(state.ants) == 1
     spawned = state.ants[0]
     assert spawned.kind == AntKind.COMBAT
@@ -433,10 +470,12 @@ def test_producer_tower_can_spawn_combat_ant_with_profile() -> None:
     assert spawned.move_weights.tower_pull > 0
 
 
-def test_public_round_state_serializes_tower_hp_and_ant_kind() -> None:
+def test_public_round_state_keeps_legacy_tuple_widths() -> None:
     state = GameState.initial(seed=9)
     state.towers.append(Tower(0, 0, 6, 9, TowerType.BASIC, cooldown_clock=1.0, hp=7))
     state.ants.append(Ant(30, 0, 2, 9, hp=10, level=0, kind=AntKind.COMBAT))
     public_state = state.to_public_round_state()
-    assert public_state.towers[0][6] == 7
-    assert public_state.ants[0][9] == int(AntKind.COMBAT)
+    assert len(public_state.towers[0]) == 6
+    assert public_state.towers[0] == (0, 0, 6, 9, int(TowerType.BASIC), 1)
+    assert len(public_state.ants[0]) == 9
+    assert public_state.ants[0][:9] == (30, 0, 2, 9, 10, 0, 0, int(AntStatus.ALIVE), int(AntBehavior.DEFAULT))
