@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import numpy as np
 
 from SDK.utils.constants import (
+    ANT_GENERATION_CYCLE,
+    ANT_MAX_HP,
     AntBehavior,
     HIGHLAND_CELLS,
     MAP_PROPERTY,
@@ -58,6 +60,14 @@ class FeatureExtractor:
         old_delta = float(state.old_count[enemy] - state.old_count[player])
         tower_spread = state.tower_spread_score(player)
         slot_fill_ratio = len(my_towers) / max(len(HIGHLAND_CELLS[player]), 1)
+        base_cycle = ANT_GENERATION_CYCLE[0]
+        best_cycle = min(ANT_GENERATION_CYCLE)
+        cycle_span = max(base_cycle - best_cycle, 1e-6)
+        generation_value = (base_cycle - ANT_GENERATION_CYCLE[state.bases[player].generation_level]) / cycle_span
+        base_ant_hp = ANT_MAX_HP[0]
+        best_ant_hp = ANT_MAX_HP[-1]
+        ant_hp_span = max(best_ant_hp - base_ant_hp, 1)
+        ant_value = (ANT_MAX_HP[state.bases[player].ant_level] - base_ant_hp) / ant_hp_span
 
         named = {
             "round_ratio": state.round_index / MAX_ROUND,
@@ -77,8 +87,8 @@ class FeatureExtractor:
             "old_delta": old_delta,
             "tower_spread": float(tower_spread),
             "slot_fill_ratio": float(slot_fill_ratio),
-            "generation_level": float(state.bases[player].generation_level),
-            "ant_level": float(state.bases[player].ant_level),
+            "generation_level": float(generation_value),
+            "ant_level": float(ant_value),
         }
         values = np.array(list(named.values()), dtype=np.float32)
         return StateFeatures(values=values, named=named)

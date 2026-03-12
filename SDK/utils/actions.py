@@ -5,12 +5,15 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from SDK.utils.constants import (
+    ANT_GENERATION_CYCLE,
+    ANT_MAX_HP,
     MAX_ACTIONS,
     OperationType,
     PLAYER_BASES,
     STRATEGIC_BUILD_ORDER,
     SUPER_WEAPON_STATS,
     SuperWeaponType,
+    TOWER_STATS,
     TOWER_UPGRADE_TREE,
     TowerType,
 )
@@ -119,13 +122,20 @@ class ActionCatalog:
         if state.bases[player].ant_level < 2:
             op = Operation(OperationType.UPGRADE_GENERATED_ANT)
             if state.can_apply_operation(player, op):
-                score = 22.0 - state.round_index * 0.015 + state.frontline_distance(player) * 0.3
+                level = state.bases[player].ant_level
+                hp_gain = ANT_MAX_HP[level + 1] - ANT_MAX_HP[level]
+                score = 8.0 + hp_gain * 1.4 + state.frontline_distance(player) * 0.22 - state.round_index * 0.01 - level * 1.2
                 results.append(ActionBundle("upgrade-ant", (op,), score, ("base", "offense")))
         if state.bases[player].generation_level < 2:
-            op = Operation(OperationType.UPGRADE_GENERATION_SPEED)
-            if state.can_apply_operation(player, op):
-                score = 18.0 - state.round_index * 0.02 + state.nearest_ant_distance(player) * 0.15
-                results.append(ActionBundle("upgrade-gen", (op,), score, ("base", "tempo")))
+            level = state.bases[player].generation_level
+            current_cycle = ANT_GENERATION_CYCLE[level]
+            next_cycle = ANT_GENERATION_CYCLE[level + 1]
+            if next_cycle < current_cycle - 1e-6:
+                op = Operation(OperationType.UPGRADE_GENERATION_SPEED)
+                if state.can_apply_operation(player, op):
+                    tempo_gain = current_cycle - next_cycle
+                    score = 10.0 + tempo_gain * 14.0 + state.nearest_ant_distance(player) * 0.12 - state.round_index * 0.015
+                    results.append(ActionBundle("upgrade-gen", (op,), score, ("base", "tempo")))
         return results
 
     def _superweapon_candidates(self, state: BackendState, player: int) -> list[ActionBundle]:
@@ -242,12 +252,18 @@ class ActionCatalog:
             return local_density * 0.9 + 4.0
         if tower_type == TowerType.SNIPER:
             return max(0.0, 18 - forward_distance) + local_density * 0.4
-        if tower_type in (TowerType.PRODUCER, TowerType.PRODUCER_FAST):
-            return max(0.0, 10 - local_density) + max(0.0, 16 - forward_distance) * 0.35
-        if tower_type == TowerType.PRODUCER_SIEGE:
-            return max(0.0, 12 - local_density) + max(0.0, 14 - forward_distance) * 0.45
-        if tower_type == TowerType.PRODUCER_MEDIC:
-            return max(0.0, 8 - local_density) + max(0.0, 12 - forward_distance) * 0.3 + 2.0
+        if tower_type in (TowerType.PRODUCER, TowerType.PRODUCER_FAST, TowerType.PRODUCER_SIEGE, TowerType.PRODUCER_MEDIC):
+            stats = TOWER_STATS[tower_type]
+            cadence = 12.0 / max(stats.spawn_interval, 1)
+            density_bonus = max(0.0, 10 - local_density) * 0.75
+            forward_bonus = max(0.0, 16 - forward_distance) * 0.22
+            branch_bonus = {
+                TowerType.PRODUCER: 0.0,
+                TowerType.PRODUCER_FAST: 0.5,
+                TowerType.PRODUCER_SIEGE: 1.1,
+                TowerType.PRODUCER_MEDIC: 1.0,
+            }[tower_type]
+            return density_bonus + forward_bonus + cadence + branch_bonus
         return 0.0
 
     def _storm_value(self, state: BackendState, player: int, x: int, y: int) -> float:

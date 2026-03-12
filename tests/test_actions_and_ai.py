@@ -7,6 +7,7 @@ from AI.ai_mcts import MCTSAgent
 from AI.ai_random import RandomAgent
 from SDK.utils.actions import ActionCatalog
 from SDK.backend import load_backend
+from SDK.utils.features import FeatureExtractor
 from SDK.utils.constants import OperationType
 from SDK.backend.engine import GameState
 from SDK.backend.forecast import Ant as ForecastAnt, AntState as ForecastAntState, ForecastState, Operation as ForecastOperation
@@ -70,6 +71,34 @@ def test_action_catalog_skips_max_level_base_upgrades() -> None:
         for bundle in bundles
         for op in bundle.operations
     )
+
+
+def test_action_catalog_skips_generation_upgrade_when_next_level_has_no_real_gain() -> None:
+    state = GameState.initial(seed=18)
+    state.coins[0] = 9999
+    state.bases[0].generation_level = 1
+
+    catalog = ActionCatalog(max_actions=64)
+    bundles = catalog.build(state, 0)
+
+    assert all(
+        op.op_type != OperationType.UPGRADE_GENERATION_SPEED
+        for bundle in bundles
+        for op in bundle.operations
+    )
+
+
+def test_feature_extractor_clamps_generation_value_when_cycle_plateaus() -> None:
+    extractor = FeatureExtractor()
+    state_level1 = GameState.initial(seed=19)
+    state_level2 = GameState.initial(seed=20)
+    state_level1.bases[0].generation_level = 1
+    state_level2.bases[0].generation_level = 2
+
+    summary1 = extractor.summarize(state_level1, 0).named
+    summary2 = extractor.summarize(state_level2, 0).named
+
+    assert summary1["generation_level"] == summary2["generation_level"]
 
 
 def test_mcts_module_is_self_contained() -> None:
