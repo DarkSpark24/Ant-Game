@@ -87,7 +87,7 @@ def test_action_catalog_skips_max_level_base_upgrades() -> None:
 def test_action_catalog_skips_generation_upgrade_when_next_level_has_no_real_gain() -> None:
     state = GameState.initial(seed=18)
     state.coins[0] = 9999
-    state.bases[0].generation_level = 1
+    state.bases[0].generation_level = 0
 
     catalog = ActionCatalog(max_actions=64)
     bundles = catalog.build(state, 0)
@@ -103,13 +103,41 @@ def test_feature_extractor_clamps_generation_value_when_cycle_plateaus() -> None
     extractor = FeatureExtractor()
     state_level1 = GameState.initial(seed=19)
     state_level2 = GameState.initial(seed=20)
-    state_level1.bases[0].generation_level = 1
-    state_level2.bases[0].generation_level = 2
+    state_level1.bases[0].generation_level = 0
+    state_level2.bases[0].generation_level = 1
 
     summary1 = extractor.summarize(state_level1, 0).named
     summary2 = extractor.summarize(state_level2, 0).named
 
     assert summary1["generation_level"] == summary2["generation_level"]
+
+
+def test_action_catalog_skips_ant_upgrade_when_next_level_has_no_real_gain() -> None:
+    state = GameState.initial(seed=22)
+    state.coins[0] = 9999
+    state.bases[0].ant_level = 1
+
+    catalog = ActionCatalog(max_actions=64)
+    bundles = catalog.build(state, 0)
+
+    assert all(
+        op.op_type != OperationType.UPGRADE_GENERATED_ANT
+        for bundle in bundles
+        for op in bundle.operations
+    )
+
+
+def test_feature_extractor_clamps_ant_value_when_hp_plateaus() -> None:
+    extractor = FeatureExtractor()
+    state_level1 = GameState.initial(seed=23)
+    state_level2 = GameState.initial(seed=24)
+    state_level1.bases[0].ant_level = 1
+    state_level2.bases[0].ant_level = 2
+
+    summary1 = extractor.summarize(state_level1, 0).named
+    summary2 = extractor.summarize(state_level2, 0).named
+
+    assert summary1["ant_level"] == summary2["ant_level"]
 
 
 def test_mcts_module_is_self_contained() -> None:

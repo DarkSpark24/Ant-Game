@@ -3,8 +3,8 @@
 #include <algorithm>
 
 
-const int cd_num[3] = {4, 7, 7};
-const int cd_den[3] = {1, 2, 2};
+const int cd_num[3] = {4, 4, 7};
+const int cd_den[3] = {1, 1, 2};
 // judge whether ant can be generated
 bool Headquarter::create_new_ant(int round) {
     if (round == 0) return true;

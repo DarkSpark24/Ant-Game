@@ -120,12 +120,13 @@ class ActionCatalog:
     def _base_upgrade_candidates(self, state: BackendState, player: int) -> list[ActionBundle]:
         results: list[ActionBundle] = []
         if state.bases[player].ant_level < 2:
-            op = Operation(OperationType.UPGRADE_GENERATED_ANT)
-            if state.can_apply_operation(player, op):
-                level = state.bases[player].ant_level
-                hp_gain = ANT_MAX_HP[level + 1] - ANT_MAX_HP[level]
-                score = 8.0 + hp_gain * 1.4 + state.frontline_distance(player) * 0.22 - state.round_index * 0.01 - level * 1.2
-                results.append(ActionBundle("upgrade-ant", (op,), score, ("base", "offense")))
+            level = state.bases[player].ant_level
+            hp_gain = ANT_MAX_HP[level + 1] - ANT_MAX_HP[level]
+            if hp_gain > 0:
+                op = Operation(OperationType.UPGRADE_GENERATED_ANT)
+                if state.can_apply_operation(player, op):
+                    score = 8.0 + hp_gain * 1.4 + state.frontline_distance(player) * 0.22 - state.round_index * 0.01 - level * 1.2
+                    results.append(ActionBundle("upgrade-ant", (op,), score, ("base", "offense")))
         if state.bases[player].generation_level < 2:
             level = state.bases[player].generation_level
             current_cycle = ANT_GENERATION_CYCLE[level]
