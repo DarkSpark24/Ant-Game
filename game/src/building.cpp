@@ -149,9 +149,9 @@ void DefenseTower::set_stats_for_type(TowerType tower_type_) {
         hp_limit = 15;
         break;
     case TowerType::Quick:
-        damage = 6;
+        damage = 5;
         spd = 1;
-        range = 2;
+        range = 1;
         hp_limit = 15;
         break;
     case TowerType::Mortar:
@@ -167,32 +167,32 @@ void DefenseTower::set_stats_for_type(TowerType tower_type_) {
         hp_limit = 15;
         break;
     case TowerType::HeavyPlus:
-        damage = 35;
+        damage = 30;
         spd = 2;
         range = 2;
         hp_limit = 15;
         break;
     case TowerType::Ice:
-        damage = 15;
+        damage = 10;
         spd = 2;
         range = 1;
         hp_limit = 15;
         break;
-    case TowerType::Cannon:
-        damage = 15;
-        spd = 3;
+    case TowerType::Bewitch:
+        damage = 10;
+        spd = 2;
         range = 2;
         hp_limit = 15;
         break;
     case TowerType::QuickPlus:
-        damage = 8;
+        damage = 5;
         spd = 0.5;
-        range = 2;
+        range = 1;
         hp_limit = 15;
         break;
     case TowerType::Double:
-        damage = 7;
-        spd = 1;
+        damage = 5;
+        spd = 2;
         range = 3;
         hp_limit = 15;
         break;
@@ -203,21 +203,21 @@ void DefenseTower::set_stats_for_type(TowerType tower_type_) {
         hp_limit = 15;
         break;
     case TowerType::MortarPlus:
-        damage = 20;
+        damage = 15;
         spd = 4;
-        range = 3;
+        range = 2;
         hp_limit = 15;
         break;
     case TowerType::Pulse:
-        damage = 12;
-        spd = 3;
-        range = 1;
+        damage = 5;
+        spd = 4;
+        range = 2;
         hp_limit = 15;
         break;
     case TowerType::Missile:
-        damage = 25;
+        damage = 20;
         spd = 6;
-        range = 4;
+        range = 3;
         hp_limit = 15;
         break;
     case TowerType::ProducerFast:

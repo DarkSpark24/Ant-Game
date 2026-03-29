@@ -242,7 +242,7 @@ class ActionCatalog:
         return pressure
 
     def _tower_type_fit(self, tower_type: TowerType, local_density: float, forward_distance: int) -> float:
-        if tower_type in (TowerType.HEAVY, TowerType.HEAVY_PLUS, TowerType.CANNON):
+        if tower_type in (TowerType.HEAVY, TowerType.HEAVY_PLUS, TowerType.BEWITCH):
             return local_density * 1.1 - forward_distance * 0.1
         if tower_type in (TowerType.ICE, TowerType.PULSE):
             return local_density * 1.3

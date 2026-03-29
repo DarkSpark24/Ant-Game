@@ -90,6 +90,21 @@ def _half_cells(player: int) -> tuple[tuple[int, int], ...]:
     return tuple(cells)
 
 
+def _half_plane_delta(player: int, x: int, y: int) -> int:
+    own_base = PLAYER_BASES[player]
+    enemy_base = PLAYER_BASES[1 - player]
+    return hex_distance(x, y, *own_base) - hex_distance(x, y, *enemy_base)
+
+
+@lru_cache(maxsize=None)
+def _bewitch_cells(player: int, anchor_delta: int) -> tuple[tuple[int, int], ...]:
+    return tuple(
+        (x, y)
+        for x, y in WALKABLE_CELLS
+        if _half_plane_delta(player, x, y) <= anchor_delta
+    )
+
+
 def _softmax_choice(weights: list[float], temperature: float) -> list[float]:
     if not weights:
         return []
@@ -252,8 +267,11 @@ class GameState:
             return LEVEL2_TOWER_UPGRADE_COST
         return LEVEL3_TOWER_UPGRADE_COST
 
-    def destroy_tower_income(self, tower_count: int) -> int:
-        return int(self.build_tower_cost(tower_count - 1) * TOWER_DOWNGRADE_REFUND_RATIO)
+    def destroy_tower_income(self, tower_count: int, tower: Tower | None = None) -> int:
+        refund = self.build_tower_cost(tower_count - 1) * TOWER_DOWNGRADE_REFUND_RATIO
+        if tower is None:
+            return int(refund)
+        return int(refund * max(tower.hp, 0) / max(tower.max_hp, 1))
 
     def downgrade_tower_income(self, tower_type: TowerType) -> int:
         return int(self.upgrade_tower_cost(tower_type) * TOWER_DOWNGRADE_REFUND_RATIO)
@@ -349,7 +367,7 @@ class GameState:
             control_value = 0.0
             if tower.tower_type == TowerType.ICE:
                 control_value = 1.0
-            elif tower.tower_type == TowerType.CANNON:
+            elif tower.tower_type == TowerType.BEWITCH:
                 control_value = 1.3
             elif tower.tower_type == TowerType.PULSE:
                 control_value = 0.7
@@ -559,12 +577,17 @@ class GameState:
         self._mark_risk_fields_dirty()
 
     def _ant_in_own_half(self, ant: Ant) -> bool:
-        own_base = PLAYER_BASES[ant.player]
-        enemy_base = PLAYER_BASES[1 - ant.player]
-        return hex_distance(ant.x, ant.y, *own_base) <= hex_distance(ant.x, ant.y, *enemy_base)
+        return _half_plane_delta(ant.player, ant.x, ant.y) <= 0
 
-    def _random_own_half_target(self, player: int) -> tuple[int, int]:
-        cells = _half_cells(player)
+    def _random_bewitch_target(self, ant: Ant) -> tuple[int, int]:
+        anchor_delta = _half_plane_delta(ant.player, ant.x, ant.y)
+        cells = [
+            cell
+            for cell in _bewitch_cells(ant.player, anchor_delta)
+            if cell != (ant.x, ant.y)
+        ]
+        if not cells:
+            return PLAYER_BASES[ant.player]
         return cells[self._random_index(len(cells))]
 
     def _control_ant(self, ant: Ant, behavior: AntBehavior, *, target: tuple[int, int] | None = None) -> None:
@@ -587,7 +610,7 @@ class GameState:
                 return 0
             if tower.tower_type == TowerType.BASIC:
                 count = self.tower_count(player) if tower_count_hint is None else tower_count_hint
-                return self.destroy_tower_income(count)
+                return self.destroy_tower_income(count, tower)
             return self.downgrade_tower_income(tower.tower_type)
         if operation.op_type in (
             OperationType.USE_LIGHTNING_STORM,
@@ -673,7 +696,7 @@ class GameState:
                 if tower is None:
                     continue
                 if tower.tower_type == TowerType.BASIC:
-                    income += self.destroy_tower_income(simulated_tower_count)
+                    income += self.destroy_tower_income(simulated_tower_count, tower)
                     simulated_tower_count -= 1
                 else:
                     income += self.downgrade_tower_income(tower.tower_type)
@@ -800,11 +823,11 @@ class GameState:
             ant.pending_behavior = AntBehavior.RANDOM
             ant.refresh_status()
             return
-        if tower.tower_type == TowerType.CANNON:
+        if tower.tower_type == TowerType.BEWITCH:
             if self._ant_in_own_half(ant):
                 target = PLAYER_BASES[ant.player]
             else:
-                target = self._random_own_half_target(ant.player)
+                target = self._random_bewitch_target(ant)
             self._control_ant(ant, AntBehavior.BEWITCHED, target=target)
             return
         if tower.tower_type == TowerType.PULSE:
@@ -843,11 +866,11 @@ class GameState:
         expanded: list[Ant] = []
         for target in targets:
             if tower.tower_type in (TowerType.MORTAR, TowerType.MORTAR_PLUS):
-                expanded.extend(self._ants_in_range(tower.player, target.x, target.y, 1))
+                expanded.extend(self._ants_in_range(tower.player, target.x, target.y, tower.attack_range))
             elif tower.tower_type == TowerType.PULSE:
                 expanded.extend(self._ants_in_range(tower.player, tower.x, tower.y, tower.attack_range))
             elif tower.tower_type == TowerType.MISSILE:
-                expanded.extend(self._ants_in_range(tower.player, target.x, target.y, 2))
+                expanded.extend(self._ants_in_range(tower.player, target.x, target.y, tower.attack_range))
             else:
                 expanded.append(target)
         unique: dict[int, Ant] = {}

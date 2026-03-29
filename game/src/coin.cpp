@@ -1,4 +1,5 @@
 #include "../include/coin.h"
+#include <algorithm>
 #include <cmath>
 #include <tuple>
 
@@ -36,17 +37,19 @@ void Coin::income_ant_arrive() {
 
 bool Coin::isEnough_tower_build() const { return coin >= tower_building_price; }
 constexpr int LEVEL1_PRICE = 60, LEVEL2_PRICE = 200;
-void Coin::income_tower_destroy(const int &level) {
-    switch (level) {
+void Coin::income_tower_destroy(const DefenseTower &tower) {
+    switch (tower.get_level()) {
     case 0: // level 0 -> -1
         tower_building_price /= TOWER_PRICE_INCREASING_RATIO;
-        coin += tower_building_price * 0.9;
+        coin += static_cast<int>(
+            (9LL * tower_building_price * std::max(tower.get_hp(), 0)) /
+            (10LL * std::max(tower.get_hp_limit(), 1)));
         break;
     case 1: // level 1 -> 0
-        coin += LEVEL1_PRICE * 0.9;
+        coin += LEVEL1_PRICE * 9 / 10;
         break;
     case 2: // level 2 -> 1
-        coin += LEVEL2_PRICE * 0.9;
+        coin += LEVEL2_PRICE * 9 / 10;
         break;
     }
 }

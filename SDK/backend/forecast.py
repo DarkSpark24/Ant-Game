@@ -9,6 +9,7 @@ from SDK.utils.constants import (
     ANT_GENERATION_SCHEDULE,
     ANT_KILL_REWARD,
     ANT_MAX_HP,
+    COMBAT_ANT_HP,
     BASIC_INCOME,
     BASIC_INCOME_INTERVAL,
     BASE_UPGRADE_COST,
@@ -30,6 +31,7 @@ from SDK.utils.constants import (
     TOWER_DOWNGRADE_REFUND_RATIO,
     TOWER_STATS,
     TOWER_UPGRADE_TREE,
+    AntKind,
     TowerType,
     AntStatus,
 )
@@ -81,6 +83,7 @@ class Ant:
     trail_cells: List[tuple[int, int]] = field(default_factory=list)
     last_move: int = NO_MOVE
     path_len_total: int = 0
+    kind: AntKind = AntKind.WORKER
 
     AGE_LIMIT = ANT_AGE_LIMIT
 
@@ -106,6 +109,8 @@ class Ant:
         self.trail_cells.append((self.x, self.y))
 
     def max_hp(self) -> int:
+        if self.kind == AntKind.COMBAT:
+            return COMBAT_ANT_HP
         return ANT_MAX_HP[self.level]
 
     def reward(self) -> int:
@@ -135,6 +140,7 @@ class Ant:
             list(self.trail_cells),
             self.last_move,
             self.path_len_total,
+            self.kind,
         )
 
 
@@ -177,11 +183,11 @@ class Tower:
         attackable: List[int] = []
         for idx in target_idxs:
             if self.type in (TowerType.MORTAR, TowerType.MORTAR_PLUS):
-                extra = self.get_attackable_ants(ants, ants[idx].x, ants[idx].y, 1)
+                extra = self.get_attackable_ants(ants, ants[idx].x, ants[idx].y, self.range)
             elif self.type == TowerType.PULSE:
                 extra = self.get_attackable_ants(ants, self.x, self.y, self.range)
             elif self.type == TowerType.MISSILE:
-                extra = self.get_attackable_ants(ants, ants[idx].x, ants[idx].y, 2)
+                extra = self.get_attackable_ants(ants, ants[idx].x, ants[idx].y, self.range)
             else:
                 extra = [idx]
             attackable.extend(extra)
@@ -526,7 +532,7 @@ class GameInfo:
             if tower is None:
                 return 0
             if tower.type == TowerType.BASIC:
-                return self.destroy_tower_income(self.tower_num_of_player(player))
+                return self.destroy_tower_income(self.tower_num_of_player(player), tower)
             return self.downgrade_tower_income(int(tower.type))
         if op.type in (
             OperationType.USE_LIGHTNING_STORM,
@@ -555,7 +561,7 @@ class GameInfo:
                 if tower is None:
                     continue
                 if tower.type == TowerType.BASIC:
-                    income += self.destroy_tower_income(tower_num)
+                    income += self.destroy_tower_income(tower_num, tower)
                     tower_num -= 1
                 else:
                     income += self.downgrade_tower_income(int(tower.type))
@@ -608,8 +614,11 @@ class GameInfo:
         return max(range(6), key=lambda idx: (weighted[idx][0], weighted[idx][1], -idx))
 
     @staticmethod
-    def destroy_tower_income(tower_num: int) -> int:
-        return int(GameInfo.build_tower_cost(tower_num - 1) * TOWER_DOWNGRADE_REFUND_RATIO)
+    def destroy_tower_income(tower_num: int, tower: Tower | None = None) -> int:
+        refund = GameInfo.build_tower_cost(tower_num - 1) * TOWER_DOWNGRADE_REFUND_RATIO
+        if tower is None:
+            return int(refund)
+        return int(refund * max(tower.hp, 0) / max(tower.max_hp, 1))
 
     @staticmethod
     def downgrade_tower_income(tower_type: int) -> int:
@@ -626,7 +635,7 @@ class GameInfo:
         if tower_type in (
             TowerType.HEAVY_PLUS,
             TowerType.ICE,
-            TowerType.CANNON,
+            TowerType.BEWITCH,
             TowerType.QUICK_PLUS,
             TowerType.DOUBLE,
             TowerType.SNIPER,
@@ -741,7 +750,7 @@ class Simulator:
 
         for ant in self.info.ants:
             ant.age += 1
-            if ant.state != AntState.FAIL and ant.age > Ant.AGE_LIMIT:
+            if ant.state != AntState.FAIL and ant.kind != AntKind.COMBAT and ant.age > Ant.AGE_LIMIT:
                 ant.state = AntState.TOO_OLD
             direction = NO_MOVE
             if ant.state == AntState.ALIVE:
@@ -850,6 +859,7 @@ def build_forecast_state(state) -> GameInfo:
             trail_cells=list(ant.trail_cells),
             last_move=int(ant.last_move),
             path_len_total=int(ant.path_len_total),
+            kind=AntKind(int(ant.kind)),
         )
         for ant in state.ants
     ]

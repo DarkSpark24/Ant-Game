@@ -606,7 +606,7 @@ class AI:
             if tower.type == TowerType.BASIC:
                 target = (TowerType.HEAVY, TowerType.MORTAR, TowerType.QUICK)[upgrade_branch]
             elif tower.type == TowerType.HEAVY:
-                target = (TowerType.HEAVY_PLUS, TowerType.CANNON, TowerType.ICE)[upgrade_branch]
+                target = (TowerType.HEAVY_PLUS, TowerType.BEWITCH, TowerType.ICE)[upgrade_branch]
             elif tower.type == TowerType.MORTAR:
                 target = (TowerType.MORTAR_PLUS, TowerType.MISSILE, TowerType.PULSE)[upgrade_branch]
             elif tower.type == TowerType.QUICK:

@@ -209,7 +209,7 @@ class Ant:
         if self.x == base_x and self.y == base_y:
             self.status = AntStatus.SUCCESS
             return
-        if self.age > ANT_AGE_LIMIT:
+        if self.kind != AntKind.COMBAT and self.age > ANT_AGE_LIMIT:
             self.status = AntStatus.TOO_OLD
             return
         if self.frozen:
