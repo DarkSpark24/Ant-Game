@@ -245,15 +245,10 @@ void DefenseTower::set_stats_for_type(TowerType tower_type_) {
 // upgrade the tower
 bool DefenseTower::upgrade(TowerType tower_type_) {
     round = 0;
-    int previous_hp = hp;
-    int previous_hp_limit = hp_limit;
     level++;
     tower_type = tower_type_;
     set_stats_for_type(tower_type);
-    hp = previous_hp_limit > 0
-             ? std::max(1, (previous_hp * hp_limit + previous_hp_limit - 1) /
-                               previous_hp_limit)
-             : hp_limit;
+    hp = hp_limit;
     return true;
 }
 

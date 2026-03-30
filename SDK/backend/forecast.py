@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
+import math
 from typing import List, Optional, Sequence
 
 from SDK.utils.constants import (
@@ -156,20 +157,27 @@ class Tower:
     damage: int = 0
     range: int = 0
     speed: float = 0.0
+    hp: int = -1
 
     def __post_init__(self) -> None:
         seeded_cd = self.cd
-        self.upgrade(self.type)
+        self.refresh_stats()
+        if self.hp < 0:
+            self.hp = self.max_hp
         if seeded_cd != -2:
             self.cd = seeded_cd
 
     def clone(self) -> Tower:
-        copied = Tower(self.id, self.player, self.x, self.y, self.type, self.cd)
+        copied = Tower(self.id, self.player, self.x, self.y, self.type, self.cd, hp=self.hp)
         copied.emp = self.emp
         copied.damage = self.damage
         copied.range = self.range
         copied.speed = self.speed
         return copied
+
+    @property
+    def max_hp(self) -> int:
+        return TOWER_STATS[self.type].max_hp
 
     def get_attackable_ants(self, ants: Sequence[Ant], x: int, y: int, radius: int) -> List[int]:
         return [idx for idx, ant in enumerate(ants) if ant.is_attackable_from(self.player, x, y, radius)]
@@ -227,13 +235,17 @@ class Tower:
     def reset_cd(self) -> None:
         self.cd = int(self.speed) if self.speed > 1 else 1
 
-    def upgrade(self, new_type: TowerType) -> None:
-        self.type = TowerType(new_type)
+    def refresh_stats(self) -> None:
         stats = TOWER_STATS[self.type]
         self.damage = stats.damage
         self.speed = stats.speed
         self.range = stats.attack_range
         self.reset_cd()
+
+    def upgrade(self, new_type: TowerType) -> None:
+        self.type = TowerType(new_type)
+        self.refresh_stats()
+        self.hp = self.max_hp
 
     def is_upgrade_type_valid(self, target_type: int | TowerType) -> bool:
         try:
@@ -243,7 +255,14 @@ class Tower:
         return target in TOWER_UPGRADE_TREE.get(self.type, ())
 
     def downgrade(self) -> None:
-        self.upgrade(TowerType(self.type // 10))
+        previous_hp = max(0, self.hp)
+        previous_max_hp = self.max_hp
+        self.type = TowerType(self.type // 10)
+        self.refresh_stats()
+        if previous_max_hp > 0:
+            self.hp = max(1, math.ceil(self.max_hp * previous_hp / previous_max_hp))
+        else:
+            self.hp = self.max_hp
 
     def is_downgrade_valid(self) -> bool:
         return self.type != TowerType.BASIC
@@ -533,7 +552,7 @@ class GameInfo:
                 return 0
             if tower.type == TowerType.BASIC:
                 return self.destroy_tower_income(self.tower_num_of_player(player), tower)
-            return self.downgrade_tower_income(int(tower.type))
+            return self.downgrade_tower_income(int(tower.type), tower)
         if op.type in (
             OperationType.USE_LIGHTNING_STORM,
             OperationType.USE_EMP_BLASTER,
@@ -564,7 +583,7 @@ class GameInfo:
                     income += self.destroy_tower_income(tower_num, tower)
                     tower_num -= 1
                 else:
-                    income += self.downgrade_tower_income(int(tower.type))
+                    income += self.downgrade_tower_income(int(tower.type), tower)
             else:
                 income += self.get_operation_income(player, op)
         return income + self.coins[player] >= 0
@@ -621,8 +640,11 @@ class GameInfo:
         return int(refund * max(tower.hp, 0) / max(tower.max_hp, 1))
 
     @staticmethod
-    def downgrade_tower_income(tower_type: int) -> int:
-        return int(GameInfo.upgrade_tower_cost(tower_type) * TOWER_DOWNGRADE_REFUND_RATIO)
+    def downgrade_tower_income(tower_type: int, tower: Tower | None = None) -> int:
+        refund = GameInfo.upgrade_tower_cost(tower_type) * TOWER_DOWNGRADE_REFUND_RATIO
+        if tower is None:
+            return int(refund)
+        return int(refund * max(tower.hp, 0) / max(tower.max_hp, 1))
 
     @staticmethod
     def build_tower_cost(tower_num: int) -> int:

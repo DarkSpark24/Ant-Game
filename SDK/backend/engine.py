@@ -273,8 +273,11 @@ class GameState:
             return int(refund)
         return int(refund * max(tower.hp, 0) / max(tower.max_hp, 1))
 
-    def downgrade_tower_income(self, tower_type: TowerType) -> int:
-        return int(self.upgrade_tower_cost(tower_type) * TOWER_DOWNGRADE_REFUND_RATIO)
+    def downgrade_tower_income(self, tower_type: TowerType, tower: Tower | None = None) -> int:
+        refund = self.upgrade_tower_cost(tower_type) * TOWER_DOWNGRADE_REFUND_RATIO
+        if tower is None:
+            return int(refund)
+        return int(refund * max(tower.hp, 0) / max(tower.max_hp, 1))
 
     def upgrade_base_cost(self, level: int) -> int:
         return BASE_UPGRADE_COST[level]
@@ -611,7 +614,7 @@ class GameState:
             if tower.tower_type == TowerType.BASIC:
                 count = self.tower_count(player) if tower_count_hint is None else tower_count_hint
                 return self.destroy_tower_income(count, tower)
-            return self.downgrade_tower_income(tower.tower_type)
+            return self.downgrade_tower_income(tower.tower_type, tower)
         if operation.op_type in (
             OperationType.USE_LIGHTNING_STORM,
             OperationType.USE_EMP_BLASTER,
@@ -699,7 +702,7 @@ class GameState:
                     income += self.destroy_tower_income(simulated_tower_count, tower)
                     simulated_tower_count -= 1
                 else:
-                    income += self.downgrade_tower_income(tower.tower_type)
+                    income += self.downgrade_tower_income(tower.tower_type, tower)
             else:
                 income += self._operation_income(player, op)
         return self.coins[player] + income >= 0

@@ -46,10 +46,14 @@ void Coin::income_tower_destroy(const DefenseTower &tower) {
             (10LL * std::max(tower.get_hp_limit(), 1)));
         break;
     case 1: // level 1 -> 0
-        coin += LEVEL1_PRICE * 9 / 10;
+        coin += static_cast<int>(
+            (9LL * LEVEL1_PRICE * std::max(tower.get_hp(), 0)) /
+            (10LL * std::max(tower.get_hp_limit(), 1)));
         break;
     case 2: // level 2 -> 1
-        coin += LEVEL2_PRICE * 9 / 10;
+        coin += static_cast<int>(
+            (9LL * LEVEL2_PRICE * std::max(tower.get_hp(), 0)) /
+            (10LL * std::max(tower.get_hp_limit(), 1)));
         break;
     }
 }

@@ -100,7 +100,6 @@ class TowerType(IntEnum):
     HEAVY_PLUS = 11
     ICE = 12
     BEWITCH = 13
-    CANNON = BEWITCH
     QUICK_PLUS = 21
     DOUBLE = 22
     SNIPER = 23

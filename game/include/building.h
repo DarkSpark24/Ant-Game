@@ -39,7 +39,6 @@ enum TowerType {
     HeavyPlus = 11,
     Ice = 12,
     Bewitch = 13,
-    Cannon = Bewitch,
     Quick = 2,
     QuickPlus = 21,
     Double = 22,
