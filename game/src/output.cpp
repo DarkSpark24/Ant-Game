@@ -10,7 +10,8 @@ json Output::new_record() {
     return json{
         {"towers", json::array()},
         {"ants", json::array()},
-        {"towers", json::array()},
+        {"weaponCooldowns", json::array()},
+        {"activeEffects", json::array()},
     };
 }
 
@@ -84,6 +85,42 @@ void Output::add_camps(const Headquarter &player0, const Headquarter &player1) {
         json::array_t({player0.get_cd_level(), player1.get_cd_level()});
     cur["anthpLv"] =
         json::array_t({player0.get_ant_level(), player1.get_ant_level()});
+}
+
+void Output::add_weapon_cooldowns(const std::vector<Item> &player0,
+                                  const std::vector<Item> &player1) {
+    cur["weaponCooldowns"] = json::array();
+    const std::vector<Item> *rows[2] = {&player0, &player1};
+    for (const auto *row : rows) {
+        json cooldown_row = json::array();
+        for (int index = 0; index < ItemType::Count && index < (int)row->size();
+             ++index) {
+            cooldown_row.push_back((*row)[index].cd);
+        }
+        cur["weaponCooldowns"].push_back(std::move(cooldown_row));
+    }
+}
+
+void Output::add_active_effects(const std::vector<Item> &player0,
+                                const std::vector<Item> &player1) {
+    cur["activeEffects"] = json::array();
+    const std::vector<Item> *rows[2] = {&player0, &player1};
+    for (int player = 0; player < 2; ++player) {
+        const auto &items = *rows[player];
+        for (int index = 0; index < ItemType::Count && index < (int)items.size();
+             ++index) {
+            const Item &item = items[index];
+            if (item.duration <= 0)
+                continue;
+            cur["activeEffects"].push_back(json{
+                {"type", index + 1},
+                {"player", player},
+                {"x", item.x},
+                {"y", item.y},
+                {"duration", item.duration},
+            });
+        }
+    }
 }
 // Helpers for serialize a multi-dimensional std::array. Using TMP.
 
@@ -163,9 +200,6 @@ void Output::save_seed(unsigned long long random_seed) {
 }
 void Output::save_data() {
     round_msg["round_state"] = cur;
-    // The live protocol still needs pheromone, but the full replay does not.
-    // Dropping it here keeps long matches from retaining large round snapshots.
-    round_msg["round_state"].erase("pheromone");
     data.push_back(round_msg);
     round_msg.clear();
 }

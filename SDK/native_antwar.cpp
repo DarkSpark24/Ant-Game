@@ -324,7 +324,11 @@ struct NativeState {
         const std::vector<std::vector<int>> &tower_rows_in,
         const std::vector<std::vector<int>> &ant_rows_in,
         const std::vector<int> &coins_in,
-        const std::vector<int> &camps_hp) {
+        const std::vector<int> &camps_hp,
+        const std::vector<int> &speed_lv,
+        const std::vector<int> &anthp_lv,
+        const std::vector<std::vector<int>> &weapon_cooldowns_in,
+        const std::vector<std::vector<int>> &active_effect_rows_in) {
         const std::unordered_map<int, Ant> previous_ants = [&]() {
             std::unordered_map<int, Ant> ants_by_id;
             for (const auto &ant : game.ants)
@@ -340,6 +344,14 @@ struct NativeState {
         if (camps_hp.size() >= 2) {
             game.base_camp0.hp = camps_hp[0];
             game.base_camp1.hp = camps_hp[1];
+        }
+        if (speed_lv.size() >= 2) {
+            game.base_camp0.cd_level = speed_lv[0];
+            game.base_camp1.cd_level = speed_lv[1];
+        }
+        if (anthp_lv.size() >= 2) {
+            game.base_camp0.ant_level = anthp_lv[0];
+            game.base_camp1.ant_level = anthp_lv[1];
         }
 
         game.defensive_towers.clear();
@@ -431,6 +443,30 @@ struct NativeState {
             max_ant_id = std::max(max_ant_id, ant_id + 1);
         }
         game.ant_id = max_ant_id;
+
+        reset_items(game);
+        for (int player = 0; player < std::min<int>(2, weapon_cooldowns_in.size());
+             ++player) {
+            const auto &row = weapon_cooldowns_in[player];
+            for (int index = 0; index < std::min<int>(ItemType::Count, row.size());
+                 ++index) {
+                game.item[player][index].cd = row[index];
+            }
+        }
+        for (const auto &row : active_effect_rows_in) {
+            if (row.size() < 5)
+                continue;
+            const int item_type = row[0] - 1;
+            const int player = row[1];
+            if (player < 0 || player >= 2 || item_type < 0 ||
+                item_type >= ItemType::Count) {
+                continue;
+            }
+            Item &item = game.item[player][item_type];
+            item.x = row[2];
+            item.y = row[3];
+            item.duration = row[4];
+        }
 
         game.is_end = false;
         game.winner = -1;

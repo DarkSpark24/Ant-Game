@@ -247,7 +247,8 @@ void to_judger::cur_json_to_oj(const json &src, const int &state) {
                        std::to_string(tower_info["pos"]["x"].get<int>()) + " " +
                        std::to_string(tower_info["pos"]["y"].get<int>()) + " " +
                        std::to_string(tower_info["type"].get<int>()) + " " +
-                       std::to_string(tower_info["cd"].get<int>()) + "\n";
+                       std::to_string(tower_info["cd"].get<int>()) + " " +
+                       std::to_string(tower_info["hp"].get<int>()) + "\n";
     }
     json_list = src["ants"].get<json::array_t>();
     oj_to_judger += std::to_string(json_list.size());
@@ -262,15 +263,47 @@ void to_judger::cur_json_to_oj(const json &src, const int &state) {
                        std::to_string(ant_info["level"].get<int>()) + " " +
                        std::to_string(ant_info["age"].get<int>()) + " " +
                        std::to_string(ant_info["status"].get<int>()) + " " +
-                       std::to_string(ant_info.value("behavior", 0)) + "\n";
+                       std::to_string(ant_info.value("behavior", 0)) + " " +
+                       std::to_string(ant_info.value("kind", 0)) + "\n";
     }
     std::vector<int> coin = src["coins"].get<std::vector<int>>();
     oj_to_judger = oj_to_judger + std::to_string(coin[0]) + " " +
                    std::to_string(coin[1]) + "\n";
 
     std::vector<int> hp = src["camps"].get<std::vector<int>>();
+    std::vector<int> speed_lv = src.value("speedLv", std::vector<int>{0, 0});
+    std::vector<int> anthp_lv = src.value("anthpLv", std::vector<int>{0, 0});
     oj_to_judger = oj_to_judger + std::to_string(hp[0]) + " " +
-                   std::to_string(hp[1]) + "\n";
+                   std::to_string(hp[1]) + " " +
+                   std::to_string(speed_lv[0]) + " " +
+                   std::to_string(speed_lv[1]) + " " +
+                   std::to_string(anthp_lv[0]) + " " +
+                   std::to_string(anthp_lv[1]) + "\n";
+
+    std::vector<json> cooldown_rows =
+        src.value("weaponCooldowns", json::array()).get<json::array_t>();
+    oj_to_judger += std::to_string(cooldown_rows.size()) + "\n";
+    for (const auto &row : cooldown_rows) {
+        std::vector<int> values = row.get<std::vector<int>>();
+        for (size_t index = 0; index < values.size(); ++index) {
+            if (index)
+                oj_to_judger += " ";
+            oj_to_judger += std::to_string(values[index]);
+        }
+        oj_to_judger += "\n";
+    }
+
+    std::vector<json> active_effects =
+        src.value("activeEffects", json::array()).get<json::array_t>();
+    oj_to_judger += std::to_string(active_effects.size()) + "\n";
+    for (const auto &effect : active_effects) {
+        oj_to_judger = oj_to_judger +
+                       std::to_string(effect["type"].get<int>()) + " " +
+                       std::to_string(effect["player"].get<int>()) + " " +
+                       std::to_string(effect["x"].get<int>()) + " " +
+                       std::to_string(effect["y"].get<int>()) + " " +
+                       std::to_string(effect["duration"].get<int>()) + "\n";
+    }
 }
 
 void to_judger::set_json_to_web_player(const json &src) {

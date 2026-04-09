@@ -155,7 +155,7 @@ void Game::refresh_static_risk_fields() {
         case TowerType::Ice:
             control_value = 1.0;
             break;
-        case TowerType::Cannon:
+        case TowerType::Bewitch:
             control_value = 1.3;
             break;
         case TowerType::Pulse:
@@ -342,7 +342,7 @@ double Game::control_risk_cost(const Ant &ant, int x, int y) const {
         case TowerType::Ice:
             total += 1.0;
             break;
-        case TowerType::Cannon:
+        case TowerType::Bewitch:
             total += 1.3;
             break;
         case TowerType::Pulse:
@@ -413,25 +413,29 @@ Pos Game::move_target_for_ant(const Ant &ant) const {
     return enemy;
 }
 
-bool Game::ant_in_own_half(const Ant &ant) const {
-    Pos own = ant.get_player() ? Pos(PLAYER_1_BASE_CAMP_X, PLAYER_1_BASE_CAMP_Y)
-                               : Pos(PLAYER_0_BASE_CAMP_X, PLAYER_0_BASE_CAMP_Y);
-    Pos enemy = ant.get_player() ? Pos(PLAYER_0_BASE_CAMP_X, PLAYER_0_BASE_CAMP_Y)
-                                 : Pos(PLAYER_1_BASE_CAMP_X, PLAYER_1_BASE_CAMP_Y);
-    return distance(Pos(ant.get_x(), ant.get_y()), own) <=
-           distance(Pos(ant.get_x(), ant.get_y()), enemy);
-}
-
-std::pair<int, int> Game::random_own_half_target(int player) {
-    std::vector<std::pair<int, int>> cells;
+int Game::half_plane_delta(int player, int x, int y) const {
     Pos own = player ? Pos(PLAYER_1_BASE_CAMP_X, PLAYER_1_BASE_CAMP_Y)
                      : Pos(PLAYER_0_BASE_CAMP_X, PLAYER_0_BASE_CAMP_Y);
     Pos enemy = player ? Pos(PLAYER_0_BASE_CAMP_X, PLAYER_0_BASE_CAMP_Y)
                        : Pos(PLAYER_1_BASE_CAMP_X, PLAYER_1_BASE_CAMP_Y);
+    return distance(Pos(x, y), own) - distance(Pos(x, y), enemy);
+}
+
+bool Game::ant_in_own_half(const Ant &ant) const {
+    return half_plane_delta(ant.get_player(), ant.get_x(), ant.get_y()) <= 0;
+}
+
+std::pair<int, int> Game::random_bewitch_target(const Ant &ant) {
+    std::vector<std::pair<int, int>> cells;
+    int player = ant.get_player();
+    Pos own = player ? Pos(PLAYER_1_BASE_CAMP_X, PLAYER_1_BASE_CAMP_Y)
+                     : Pos(PLAYER_0_BASE_CAMP_X, PLAYER_0_BASE_CAMP_Y);
+    int anchor_delta = half_plane_delta(player, ant.get_x(), ant.get_y());
     for (int x = 0; x < MAP_SIZE; ++x)
         for (int y = 0; y < MAP_SIZE; ++y)
-            if (ant_can_walk_to(x, y) && !(x == own.x && y == own.y) &&
-                distance(Pos(x, y), own) <= distance(Pos(x, y), enemy))
+            if (ant_can_walk_to(x, y) &&
+                !(x == ant.get_x() && y == ant.get_y()) &&
+                half_plane_delta(player, x, y) <= anchor_delta)
                 cells.emplace_back(x, y);
     if (cells.empty())
         return {own.x, own.y};
@@ -495,14 +499,14 @@ void Game::damage_ant_by_tower(DefenseTower &tower, Ant &ant) {
             ant.set_pending_behavior_to(Ant::Behavior::Randomized);
         }
         break;
-    case TowerType::Cannon:
+    case TowerType::Bewitch:
         if (!ant.is_control_immune()) {
             std::pair<int, int> target = ant_in_own_half(ant)
                                              ? std::make_pair(ant.get_player() ? PLAYER_1_BASE_CAMP_X
                                                                                : PLAYER_0_BASE_CAMP_X,
                                                               ant.get_player() ? PLAYER_1_BASE_CAMP_Y
                                                                                : PLAYER_0_BASE_CAMP_Y)
-                                             : random_own_half_target(ant.get_player());
+                                             : random_bewitch_target(ant);
             apply_control(ant, Ant::Behavior::Bewitched, &target);
         }
         break;
@@ -886,7 +890,7 @@ void Game::attack_ants()
                 type == TowerType::Missile)
             { // AOE
                 tower.add_attacked_ants(target->get_id());
-                int splash = type == TowerType::Missile ? 2 : 1;
+                int splash = tower.get_range();
                 for (auto &ant : ants) {
                     if (ant.get_player() == tower.get_player())
                         continue;
@@ -903,7 +907,8 @@ void Game::attack_ants()
                     if (ant.get_player() == tower.get_player())
                         continue;
                     if (distance(Pos(ant.get_x(), ant.get_y()),
-                                 Pos(tower.get_x(), tower.get_y())) <= 2) {
+                                 Pos(tower.get_x(), tower.get_y())) <=
+                        tower.get_range()) {
                         damage_ant_by_tower(tower, ant);
                         tower.add_attacked_ants(ant.get_id());
                     }
@@ -1506,9 +1511,9 @@ bool Game::apply_operation(const std::vector<Operation> &op_list, int player,
             }
             DefenseTower *defensive_tower = &defensive_towers[id];
             if (player == 1)
-                player1.coin.income_tower_destroy(defensive_tower->get_level());
+                player1.coin.income_tower_destroy(*defensive_tower);
             else
-                player0.coin.income_tower_destroy(defensive_tower->get_level());
+                player0.coin.income_tower_destroy(*defensive_tower);
 
             if (defensive_tower->get_type() == TowerType::Basic)
             {
@@ -1863,6 +1868,8 @@ void Game::dump_round_state(/* const std::string &filename */)
     }
     output.add_camps(base_camp0, base_camp1);
     output.add_coins(player0.coin, player1.coin);
+    output.add_weapon_cooldowns(item[0], item[1]);
+    output.add_active_effects(item[0], item[1]);
     output.add_pheromone(map.get_pheromone());
     output.add_winner(winner, "");
     if (!err_msg.empty())
@@ -1902,6 +1909,8 @@ void Game::dump_last_round(
     }
     output.add_camps(base_camp0, base_camp1);
     output.add_coins(player0.coin, player1.coin);
+    output.add_weapon_cooldowns(item[0], item[1]);
+    output.add_active_effects(item[0], item[1]);
     output.add_pheromone(map.get_pheromone());
 
     output.add_winner(winner, msg);

@@ -34,6 +34,10 @@ class Output {
 
     void add_coins(const Coin &player0, const Coin &player1);
     void add_camps(const Headquarter &player0, const Headquarter &player1);
+    void add_weapon_cooldowns(const std::vector<Item> &player0,
+                              const std::vector<Item> &player1);
+    void add_active_effects(const std::vector<Item> &player0,
+                            const std::vector<Item> &player1);
     void add_operation(const std::vector<Operation> *op);
     void add_winner(const int &, const std::string &);
     void add_error(const std::string& error);

@@ -99,7 +99,7 @@ class TowerType(IntEnum):
     PRODUCER = 4
     HEAVY_PLUS = 11
     ICE = 12
-    CANNON = 13
+    BEWITCH = 13
     QUICK_PLUS = 21
     DOUBLE = 22
     SNIPER = 23
@@ -164,18 +164,18 @@ class WeaponStats:
 TOWER_STATS = {
     TowerType.BASIC: TowerStats(5, 2.0, 1, 10),
     TowerType.HEAVY: TowerStats(20, 2.0, 1, 15),
-    TowerType.QUICK: TowerStats(6, 1.0, 2, 15),
+    TowerType.QUICK: TowerStats(5, 1.0, 1, 15),
     TowerType.MORTAR: TowerStats(10, 4.0, 2, 15),
     TowerType.PRODUCER: TowerStats(0, 0.0, 0, 15, spawn_interval=8),
-    TowerType.HEAVY_PLUS: TowerStats(35, 2.0, 2, 15),
-    TowerType.ICE: TowerStats(15, 2.0, 1, 15),
-    TowerType.CANNON: TowerStats(15, 3.0, 2, 15),
-    TowerType.QUICK_PLUS: TowerStats(8, 0.5, 2, 15),
-    TowerType.DOUBLE: TowerStats(7, 1.0, 3, 15),
+    TowerType.HEAVY_PLUS: TowerStats(30, 2.0, 2, 15),
+    TowerType.ICE: TowerStats(10, 2.0, 1, 15),
+    TowerType.BEWITCH: TowerStats(10, 2.0, 2, 15),
+    TowerType.QUICK_PLUS: TowerStats(5, 0.5, 1, 15),
+    TowerType.DOUBLE: TowerStats(5, 2.0, 3, 15),
     TowerType.SNIPER: TowerStats(10, 2.0, 4, 15),
-    TowerType.MORTAR_PLUS: TowerStats(20, 4.0, 3, 15),
-    TowerType.PULSE: TowerStats(12, 3.0, 1, 15),
-    TowerType.MISSILE: TowerStats(25, 6.0, 4, 15),
+    TowerType.MORTAR_PLUS: TowerStats(15, 4.0, 2, 15),
+    TowerType.PULSE: TowerStats(5, 4.0, 2, 15),
+    TowerType.MISSILE: TowerStats(20, 6.0, 3, 15),
     TowerType.PRODUCER_FAST: TowerStats(0, 0.0, 0, 15, spawn_interval=6),
     TowerType.PRODUCER_SIEGE: TowerStats(0, 0.0, 0, 15, spawn_interval=8, siege_spawn_chance=0.25),
     TowerType.PRODUCER_MEDIC: TowerStats(0, 0.0, 0, 15, spawn_interval=8, support_interval=4),
@@ -183,7 +183,7 @@ TOWER_STATS = {
 
 TOWER_UPGRADE_TREE = {
     TowerType.BASIC: (TowerType.HEAVY, TowerType.QUICK, TowerType.MORTAR, TowerType.PRODUCER),
-    TowerType.HEAVY: (TowerType.HEAVY_PLUS, TowerType.ICE, TowerType.CANNON),
+    TowerType.HEAVY: (TowerType.HEAVY_PLUS, TowerType.ICE, TowerType.BEWITCH),
     TowerType.QUICK: (TowerType.QUICK_PLUS, TowerType.DOUBLE, TowerType.SNIPER),
     TowerType.MORTAR: (TowerType.MORTAR_PLUS, TowerType.PULSE, TowerType.MISSILE),
     TowerType.PRODUCER: (TowerType.PRODUCER_FAST, TowerType.PRODUCER_SIEGE, TowerType.PRODUCER_MEDIC),

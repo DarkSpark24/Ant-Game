@@ -7,6 +7,10 @@ from SDK.backend.model import Ant, Operation, Tower, WeaponEffect
 from SDK.utils.geometry import direction_between, hex_distance, is_path, neighbors
 
 
+def _half_plane_delta(player: int, x: int, y: int) -> int:
+    return hex_distance(x, y, *PLAYER_BASES[player]) - hex_distance(x, y, *PLAYER_BASES[1 - player])
+
+
 def test_initial_round_spawns_ants_and_advances_time() -> None:
     state = GameState.initial(seed=7)
     state.resolve_turn([], [])
@@ -60,13 +64,26 @@ def test_base_upgrade_curves_match_spec() -> None:
 def test_tower_rebalance_stats_match_spec() -> None:
     assert Tower(0, 0, 6, 9, TowerType.BASIC).attack_range == 1
     assert Tower(0, 0, 6, 9, TowerType.ICE).attack_range == 1
-    assert Tower(0, 0, 6, 9, TowerType.QUICK).attack_range == 2
+    assert Tower(0, 0, 6, 9, TowerType.QUICK).attack_range == 1
     assert Tower(0, 0, 6, 9, TowerType.DOUBLE).attack_range == 3
     assert Tower(0, 0, 6, 9, TowerType.SNIPER).attack_range == 4
-    assert Tower(0, 0, 6, 9, TowerType.CANNON).damage == 15
+    assert Tower(0, 0, 6, 9, TowerType.HEAVY_PLUS).damage == 30
+    assert Tower(0, 0, 6, 9, TowerType.ICE).damage == 10
+    assert Tower(0, 0, 6, 9, TowerType.BEWITCH).damage == 10
+    assert Tower(0, 0, 6, 9, TowerType.BEWITCH).speed == 2.0
+    assert Tower(0, 0, 6, 9, TowerType.QUICK).damage == 5
+    assert Tower(0, 0, 6, 9, TowerType.QUICK_PLUS).damage == 5
+    assert Tower(0, 0, 6, 9, TowerType.QUICK_PLUS).attack_range == 1
+    assert Tower(0, 0, 6, 9, TowerType.DOUBLE).damage == 5
+    assert Tower(0, 0, 6, 9, TowerType.DOUBLE).speed == 2.0
     assert Tower(0, 0, 6, 9, TowerType.MORTAR).damage == 10
-    assert Tower(0, 0, 6, 9, TowerType.MORTAR_PLUS).damage == 20
-    assert Tower(0, 0, 6, 9, TowerType.MISSILE).damage == 25
+    assert Tower(0, 0, 6, 9, TowerType.MORTAR_PLUS).damage == 15
+    assert Tower(0, 0, 6, 9, TowerType.MORTAR_PLUS).attack_range == 2
+    assert Tower(0, 0, 6, 9, TowerType.PULSE).damage == 5
+    assert Tower(0, 0, 6, 9, TowerType.PULSE).speed == 4.0
+    assert Tower(0, 0, 6, 9, TowerType.PULSE).attack_range == 2
+    assert Tower(0, 0, 6, 9, TowerType.MISSILE).damage == 20
+    assert Tower(0, 0, 6, 9, TowerType.MISSILE).attack_range == 3
     assert Tower(0, 0, 6, 9, TowerType.PRODUCER).stats.spawn_interval == 8
     assert Tower(0, 0, 6, 9, TowerType.PRODUCER_FAST).stats.spawn_interval == 6
     assert Tower(0, 0, 6, 9, TowerType.PRODUCER_SIEGE).stats.spawn_interval == 8
@@ -108,14 +125,15 @@ def test_max_level_base_upgrade_returns_zero_income_without_crashing() -> None:
 
 def test_tower_refund_ratio_matches_new_spec() -> None:
     state = GameState.initial(seed=14)
-    assert state.destroy_tower_income(1) == int(15 * TOWER_DOWNGRADE_REFUND_RATIO)
+    tower = Tower(0, 0, 6, 9, TowerType.BASIC, hp=7)
+    assert state.destroy_tower_income(1, tower) == int(15 * TOWER_DOWNGRADE_REFUND_RATIO * 7 / 10)
     assert state.downgrade_tower_income(TowerType.HEAVY) == int(60 * TOWER_DOWNGRADE_REFUND_RATIO)
 
 
 def test_quick_tower_attacks_enemy_ant() -> None:
     state = GameState.initial(seed=1)
     state.towers.append(Tower(0, 0, 6, 9, TowerType.QUICK, cooldown_clock=1.0))
-    state.ants.append(Ant(0, 1, 8, 9, hp=10, level=0))
+    state.ants.append(Ant(0, 1, 7, 9, hp=10, level=0))
     state.advance_round()
     assert state.die_count[1] == 1 or any(ant.hp < 10 for ant in state.ants)
 
@@ -164,6 +182,66 @@ def test_bewitched_ant_degrades_to_default_after_five_rounds() -> None:
     for _ in range(5):
         state._increase_ant_age()
     assert ant.behavior == AntBehavior.DEFAULT
+
+
+def test_bewitch_targets_own_base_when_ant_is_in_own_half() -> None:
+    state = GameState.initial(seed=17)
+    ant = Ant(0, 0, 7, 9, hp=10, level=0)
+    tower = Tower(0, 1, 12, 9, TowerType.BEWITCH)
+    state._apply_tower_control(tower, ant)
+    assert ant.behavior == AntBehavior.BEWITCHED
+    assert (ant.bewitch_target_x, ant.bewitch_target_y) == PLAYER_BASES[0]
+
+
+def test_bewitch_targets_backward_half_plane_when_ant_is_in_enemy_half() -> None:
+    state = GameState.initial(seed=18)
+    ant = Ant(0, 0, 11, 9, hp=10, level=0)
+    tower = Tower(0, 1, 12, 9, TowerType.BEWITCH)
+    state._apply_tower_control(tower, ant)
+    target = (ant.bewitch_target_x, ant.bewitch_target_y)
+    assert ant.behavior == AntBehavior.BEWITCHED
+    assert target != (ant.x, ant.y)
+    assert target in PATH_CELLS or target in PLAYER_BASES
+    assert _half_plane_delta(ant.player, *target) <= _half_plane_delta(ant.player, ant.x, ant.y)
+
+
+def test_pulse_hits_only_enemies_within_declared_range() -> None:
+    state = GameState.initial(seed=19)
+    tower = Tower(0, 0, 6, 9, TowerType.PULSE)
+    near = Ant(0, 1, 8, 9, hp=20, level=0)
+    far = Ant(1, 1, 9, 9, hp=20, level=0)
+    state.ants.extend([near, far])
+    assert state._tower_attack(tower)
+    assert near.hp == 15
+    assert near.behavior == AntBehavior.RANDOM
+    assert far.hp == 20
+    assert far.behavior == AntBehavior.DEFAULT
+
+
+def test_mortar_hits_enemies_within_range_two_blast() -> None:
+    state = GameState.initial(seed=20)
+    tower = Tower(0, 0, 6, 9, TowerType.MORTAR)
+    target = Ant(0, 1, 8, 9, hp=20, level=0)
+    splash = Ant(1, 1, 10, 9, hp=20, level=0)
+    outside = Ant(2, 1, 11, 9, hp=20, level=0)
+    state.ants.extend([target, splash, outside])
+    assert state._tower_attack(tower)
+    assert target.hp == 10
+    assert splash.hp == 10
+    assert outside.hp == 20
+
+
+def test_missile_hits_enemies_within_range_three_blast() -> None:
+    state = GameState.initial(seed=21)
+    tower = Tower(0, 0, 6, 9, TowerType.MISSILE)
+    target = Ant(0, 1, 9, 9, hp=30, level=0)
+    splash = Ant(1, 1, 12, 9, hp=30, level=0)
+    outside = Ant(2, 1, 13, 9, hp=30, level=0)
+    state.ants.extend([target, splash, outside])
+    assert state._tower_attack(tower)
+    assert target.hp == 10
+    assert splash.hp == 10
+    assert outside.hp == 30
 
 
 def test_ice_freeze_promotes_ant_to_random_after_thaw() -> None:
@@ -435,7 +513,7 @@ def test_sync_public_round_state_maps_frozen_status_to_hidden_flag() -> None:
     assert synced.pending_behavior == AntBehavior.RANDOM
 
 
-def test_sync_public_round_state_accepts_optional_tower_hp_and_ant_kind_fields() -> None:
+def test_sync_public_round_state_applies_public_fields() -> None:
     state = GameState.initial(seed=8)
     public_state = PublicRoundState(
         round_index=3,
@@ -443,6 +521,10 @@ def test_sync_public_round_state_accepts_optional_tower_hp_and_ant_kind_fields()
         ants=[(11, 0, 4, 9, 10, 0, 6, int(AntStatus.ALIVE), int(AntBehavior.DEFAULT), int(AntKind.COMBAT))],
         coins=(61, 44),
         camps_hp=(49, 50),
+        speed_lv=(2, 1),
+        anthp_lv=(1, 2),
+        weapon_cooldowns=((9, 8, 7, 6), (1, 2, 3, 4)),
+        active_effects=[(int(SuperWeaponType.EMP_BLASTER), 1, 8, 9, 5)],
     )
     state.sync_public_round_state(public_state)
     assert state.round_index == 3
@@ -450,6 +532,15 @@ def test_sync_public_round_state_accepts_optional_tower_hp_and_ant_kind_fields()
     assert state.towers[0].hp == 7
     assert state.ants[0].ant_id == 11
     assert state.ants[0].kind == AntKind.COMBAT
+    assert state.bases[0].generation_level == 2
+    assert state.bases[1].generation_level == 1
+    assert state.bases[0].ant_level == 1
+    assert state.bases[1].ant_level == 2
+    assert tuple(int(state.weapon_cooldowns[0, weapon_type]) for weapon_type in SuperWeaponType) == (9, 8, 7, 6)
+    assert tuple(int(state.weapon_cooldowns[1, weapon_type]) for weapon_type in SuperWeaponType) == (1, 2, 3, 4)
+    assert len(state.active_effects) == 1
+    assert state.active_effects[0].weapon_type == SuperWeaponType.EMP_BLASTER
+    assert state.active_effects[0].remaining_turns == 5
 
 
 def test_update_pheromone_walks_backwards_from_current_position() -> None:
@@ -521,7 +612,7 @@ def test_path_len_total_counts_no_move_but_not_teleport() -> None:
 
 def test_too_old_ants_remain_visible_until_next_lifecycle_cleanup() -> None:
     state = GameState.initial(seed=4)
-    ant = Ant(11, 0, 2, 9, hp=10, level=0, age=ANT_AGE_LIMIT)
+    ant = Ant(11, 0, 2, 9, hp=10, level=0, age=ANT_AGE_LIMIT, kind=AntKind.WORKER)
     state.ants.append(ant)
     state.advance_round()
     tracked = next(item for item in state.ants if item.ant_id == 11)
@@ -530,6 +621,16 @@ def test_too_old_ants_remain_visible_until_next_lifecycle_cleanup() -> None:
     state.advance_round()
     assert all(item.ant_id != 11 for item in state.ants)
     assert state.old_count == [1, 0]
+
+
+def test_combat_ants_do_not_die_of_old_age() -> None:
+    state = GameState.initial(seed=22)
+    ant = Ant(15, 0, 2, 9, hp=30, level=0, age=ANT_AGE_LIMIT + 20, kind=AntKind.COMBAT)
+    state.ants.append(ant)
+    state.advance_round()
+    tracked = next(item for item in state.ants if item.ant_id == 15)
+    assert tracked.status != AntStatus.TOO_OLD
+    assert state.old_count == [0, 0]
 
 
 def test_terminal_round_stops_before_spawn_and_income() -> None:
@@ -618,12 +719,21 @@ def test_medic_support_prefers_combat_ant_in_frontline_two_rows_and_fully_heals(
     assert backline_combat.hp == 2
 
 
-def test_public_round_state_keeps_legacy_tuple_widths() -> None:
+def test_public_round_state_exposes_visible_runtime_fields() -> None:
     state = GameState.initial(seed=9)
     state.towers.append(Tower(0, 0, 6, 9, TowerType.BASIC, cooldown_clock=1.0, hp=7))
     state.ants.append(Ant(30, 0, 2, 9, hp=10, level=0, kind=AntKind.COMBAT))
+    state.bases[0].generation_level = 1
+    state.bases[1].ant_level = 2
+    state.weapon_cooldowns[0, SuperWeaponType.LIGHTNING_STORM] = 12
+    state.weapon_cooldowns[1, SuperWeaponType.EMP_BLASTER] = 5
+    state.active_effects = [WeaponEffect(SuperWeaponType.DEFLECTOR, 0, 6, 9, 4)]
     public_state = state.to_public_round_state()
-    assert len(public_state.towers[0]) == 6
-    assert public_state.towers[0] == (0, 0, 6, 9, int(TowerType.BASIC), 1)
-    assert len(public_state.ants[0]) == 9
-    assert public_state.ants[0][:9] == (30, 0, 2, 9, 10, 0, 0, int(AntStatus.ALIVE), int(AntBehavior.DEFAULT))
+    assert len(public_state.towers[0]) == 7
+    assert public_state.towers[0] == (0, 0, 6, 9, int(TowerType.BASIC), 1, 7)
+    assert len(public_state.ants[0]) == 10
+    assert public_state.ants[0] == (30, 0, 2, 9, 10, 0, 0, int(AntStatus.ALIVE), int(AntBehavior.DEFAULT), int(AntKind.COMBAT))
+    assert public_state.speed_lv == (1, 0)
+    assert public_state.anthp_lv == (0, 2)
+    assert public_state.weapon_cooldowns == ((12, 0, 0, 0), (0, 5, 0, 0))
+    assert public_state.active_effects == [(int(SuperWeaponType.DEFLECTOR), 0, 6, 9, 4)]

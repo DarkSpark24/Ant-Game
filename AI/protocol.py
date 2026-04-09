@@ -109,8 +109,29 @@ class ProtocolIO:
         for _ in range(ant_count):
             ants.append(tuple(map(int, (self.recv_line() or "").split())))
         coins = tuple(map(int, (self.recv_line() or "0 0").split()[:2]))
-        camps_hp = tuple(map(int, (self.recv_line() or "0 0").split()[:2]))
-        return PublicRoundState(round_index=round_index, towers=towers, ants=ants, coins=coins, camps_hp=camps_hp)
+        camp_fields = tuple(map(int, (self.recv_line() or "0 0").split()))
+        camps_hp = camp_fields[:2]
+        speed_lv = camp_fields[2:4] if len(camp_fields) >= 4 else None
+        anthp_lv = camp_fields[4:6] if len(camp_fields) >= 6 else None
+        cooldown_row_count = int((self.recv_line() or "0").strip())
+        weapon_cooldowns = []
+        for _ in range(cooldown_row_count):
+            weapon_cooldowns.append(tuple(map(int, (self.recv_line() or "").split())))
+        active_effect_count = int((self.recv_line() or "0").strip())
+        active_effects = []
+        for _ in range(active_effect_count):
+            active_effects.append(tuple(map(int, (self.recv_line() or "").split())))
+        return PublicRoundState(
+            round_index=round_index,
+            towers=towers,
+            ants=ants,
+            coins=coins,
+            camps_hp=camps_hp,
+            speed_lv=tuple(speed_lv) if speed_lv is not None else None,
+            anthp_lv=tuple(anthp_lv) if anthp_lv is not None else None,
+            weapon_cooldowns=tuple(weapon_cooldowns),
+            active_effects=active_effects,
+        )
 
     def send_operations(self, operations: Iterable[Operation]) -> None:
         items = list(operations)

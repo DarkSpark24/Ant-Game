@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
+import math
 from typing import List, Optional, Sequence
 
 from SDK.utils.constants import (
@@ -9,6 +10,7 @@ from SDK.utils.constants import (
     ANT_GENERATION_SCHEDULE,
     ANT_KILL_REWARD,
     ANT_MAX_HP,
+    COMBAT_ANT_HP,
     BASIC_INCOME,
     BASIC_INCOME_INTERVAL,
     BASE_UPGRADE_COST,
@@ -30,6 +32,7 @@ from SDK.utils.constants import (
     TOWER_DOWNGRADE_REFUND_RATIO,
     TOWER_STATS,
     TOWER_UPGRADE_TREE,
+    AntKind,
     TowerType,
     AntStatus,
 )
@@ -81,6 +84,7 @@ class Ant:
     trail_cells: List[tuple[int, int]] = field(default_factory=list)
     last_move: int = NO_MOVE
     path_len_total: int = 0
+    kind: AntKind = AntKind.WORKER
 
     AGE_LIMIT = ANT_AGE_LIMIT
 
@@ -106,6 +110,8 @@ class Ant:
         self.trail_cells.append((self.x, self.y))
 
     def max_hp(self) -> int:
+        if self.kind == AntKind.COMBAT:
+            return COMBAT_ANT_HP
         return ANT_MAX_HP[self.level]
 
     def reward(self) -> int:
@@ -135,6 +141,7 @@ class Ant:
             list(self.trail_cells),
             self.last_move,
             self.path_len_total,
+            self.kind,
         )
 
 
@@ -150,20 +157,27 @@ class Tower:
     damage: int = 0
     range: int = 0
     speed: float = 0.0
+    hp: int = -1
 
     def __post_init__(self) -> None:
         seeded_cd = self.cd
-        self.upgrade(self.type)
+        self.refresh_stats()
+        if self.hp < 0:
+            self.hp = self.max_hp
         if seeded_cd != -2:
             self.cd = seeded_cd
 
     def clone(self) -> Tower:
-        copied = Tower(self.id, self.player, self.x, self.y, self.type, self.cd)
+        copied = Tower(self.id, self.player, self.x, self.y, self.type, self.cd, hp=self.hp)
         copied.emp = self.emp
         copied.damage = self.damage
         copied.range = self.range
         copied.speed = self.speed
         return copied
+
+    @property
+    def max_hp(self) -> int:
+        return TOWER_STATS[self.type].max_hp
 
     def get_attackable_ants(self, ants: Sequence[Ant], x: int, y: int, radius: int) -> List[int]:
         return [idx for idx, ant in enumerate(ants) if ant.is_attackable_from(self.player, x, y, radius)]
@@ -177,11 +191,11 @@ class Tower:
         attackable: List[int] = []
         for idx in target_idxs:
             if self.type in (TowerType.MORTAR, TowerType.MORTAR_PLUS):
-                extra = self.get_attackable_ants(ants, ants[idx].x, ants[idx].y, 1)
+                extra = self.get_attackable_ants(ants, ants[idx].x, ants[idx].y, self.range)
             elif self.type == TowerType.PULSE:
                 extra = self.get_attackable_ants(ants, self.x, self.y, self.range)
             elif self.type == TowerType.MISSILE:
-                extra = self.get_attackable_ants(ants, ants[idx].x, ants[idx].y, 2)
+                extra = self.get_attackable_ants(ants, ants[idx].x, ants[idx].y, self.range)
             else:
                 extra = [idx]
             attackable.extend(extra)
@@ -221,13 +235,17 @@ class Tower:
     def reset_cd(self) -> None:
         self.cd = int(self.speed) if self.speed > 1 else 1
 
-    def upgrade(self, new_type: TowerType) -> None:
-        self.type = TowerType(new_type)
+    def refresh_stats(self) -> None:
         stats = TOWER_STATS[self.type]
         self.damage = stats.damage
         self.speed = stats.speed
         self.range = stats.attack_range
         self.reset_cd()
+
+    def upgrade(self, new_type: TowerType) -> None:
+        self.type = TowerType(new_type)
+        self.refresh_stats()
+        self.hp = self.max_hp
 
     def is_upgrade_type_valid(self, target_type: int | TowerType) -> bool:
         try:
@@ -237,7 +255,14 @@ class Tower:
         return target in TOWER_UPGRADE_TREE.get(self.type, ())
 
     def downgrade(self) -> None:
-        self.upgrade(TowerType(self.type // 10))
+        previous_hp = max(0, self.hp)
+        previous_max_hp = self.max_hp
+        self.type = TowerType(self.type // 10)
+        self.refresh_stats()
+        if previous_max_hp > 0:
+            self.hp = max(1, math.ceil(self.max_hp * previous_hp / previous_max_hp))
+        else:
+            self.hp = self.max_hp
 
     def is_downgrade_valid(self) -> bool:
         return self.type != TowerType.BASIC
@@ -526,8 +551,8 @@ class GameInfo:
             if tower is None:
                 return 0
             if tower.type == TowerType.BASIC:
-                return self.destroy_tower_income(self.tower_num_of_player(player))
-            return self.downgrade_tower_income(int(tower.type))
+                return self.destroy_tower_income(self.tower_num_of_player(player), tower)
+            return self.downgrade_tower_income(int(tower.type), tower)
         if op.type in (
             OperationType.USE_LIGHTNING_STORM,
             OperationType.USE_EMP_BLASTER,
@@ -555,10 +580,10 @@ class GameInfo:
                 if tower is None:
                     continue
                 if tower.type == TowerType.BASIC:
-                    income += self.destroy_tower_income(tower_num)
+                    income += self.destroy_tower_income(tower_num, tower)
                     tower_num -= 1
                 else:
-                    income += self.downgrade_tower_income(int(tower.type))
+                    income += self.downgrade_tower_income(int(tower.type), tower)
             else:
                 income += self.get_operation_income(player, op)
         return income + self.coins[player] >= 0
@@ -608,12 +633,18 @@ class GameInfo:
         return max(range(6), key=lambda idx: (weighted[idx][0], weighted[idx][1], -idx))
 
     @staticmethod
-    def destroy_tower_income(tower_num: int) -> int:
-        return int(GameInfo.build_tower_cost(tower_num - 1) * TOWER_DOWNGRADE_REFUND_RATIO)
+    def destroy_tower_income(tower_num: int, tower: Tower | None = None) -> int:
+        refund = GameInfo.build_tower_cost(tower_num - 1) * TOWER_DOWNGRADE_REFUND_RATIO
+        if tower is None:
+            return int(refund)
+        return int(refund * max(tower.hp, 0) / max(tower.max_hp, 1))
 
     @staticmethod
-    def downgrade_tower_income(tower_type: int) -> int:
-        return int(GameInfo.upgrade_tower_cost(tower_type) * TOWER_DOWNGRADE_REFUND_RATIO)
+    def downgrade_tower_income(tower_type: int, tower: Tower | None = None) -> int:
+        refund = GameInfo.upgrade_tower_cost(tower_type) * TOWER_DOWNGRADE_REFUND_RATIO
+        if tower is None:
+            return int(refund)
+        return int(refund * max(tower.hp, 0) / max(tower.max_hp, 1))
 
     @staticmethod
     def build_tower_cost(tower_num: int) -> int:
@@ -626,7 +657,7 @@ class GameInfo:
         if tower_type in (
             TowerType.HEAVY_PLUS,
             TowerType.ICE,
-            TowerType.CANNON,
+            TowerType.BEWITCH,
             TowerType.QUICK_PLUS,
             TowerType.DOUBLE,
             TowerType.SNIPER,
@@ -741,7 +772,7 @@ class Simulator:
 
         for ant in self.info.ants:
             ant.age += 1
-            if ant.state != AntState.FAIL and ant.age > Ant.AGE_LIMIT:
+            if ant.state != AntState.FAIL and ant.kind != AntKind.COMBAT and ant.age > Ant.AGE_LIMIT:
                 ant.state = AntState.TOO_OLD
             direction = NO_MOVE
             if ant.state == AntState.ALIVE:
@@ -850,6 +881,7 @@ def build_forecast_state(state) -> GameInfo:
             trail_cells=list(ant.trail_cells),
             last_move=int(ant.last_move),
             path_len_total=int(ant.path_len_total),
+            kind=AntKind(int(ant.kind)),
         )
         for ant in state.ants
     ]

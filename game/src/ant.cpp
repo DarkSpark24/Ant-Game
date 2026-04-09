@@ -188,7 +188,7 @@ Ant::Status Ant::get_status() const {
     if (!player && pos_x == PLAYER_1_BASE_CAMP_X &&
         pos_y == PLAYER_1_BASE_CAMP_Y)
         return Status::Success;
-    if (age > age_limit)
+    if (kind != Kind::Combat && age > age_limit)
         return Status::TooOld;
     if (is_frozen || all_frozen)
         return Status::Frozen;

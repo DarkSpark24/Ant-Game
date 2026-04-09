@@ -183,12 +183,45 @@ class NativeGameStateAdapter:
         return self._shadow.to_public_round_state()
 
     def sync_public_round_state(self, public_state: PublicRoundState) -> None:
+        speed_lv = (
+            list(public_state.speed_lv)
+            if public_state.speed_lv is not None
+            else [base.generation_level for base in self._shadow.bases]
+        )
+        anthp_lv = (
+            list(public_state.anthp_lv)
+            if public_state.anthp_lv is not None
+            else [base.ant_level for base in self._shadow.bases]
+        )
+        weapon_cooldowns = (
+            [list(row) for row in public_state.weapon_cooldowns]
+            if public_state.weapon_cooldowns is not None
+            else [[int(value) for value in row[1:]] for row in self._shadow.weapon_cooldowns.tolist()]
+        )
+        active_effects = (
+            [list(row) for row in public_state.active_effects]
+            if public_state.active_effects is not None
+            else [
+                [
+                    int(effect.weapon_type),
+                    int(effect.player),
+                    int(effect.x),
+                    int(effect.y),
+                    int(effect.remaining_turns),
+                ]
+                for effect in self._shadow.active_effects
+            ]
+        )
         self.native.sync_public_round_state(
             int(public_state.round_index),
             [list(row) for row in public_state.towers],
             [list(row) for row in public_state.ants],
             list(public_state.coins),
             list(public_state.camps_hp),
+            speed_lv,
+            anthp_lv,
+            weapon_cooldowns,
+            active_effects,
         )
         self._shadow.sync_public_round_state(public_state)
         self._refresh_cache()

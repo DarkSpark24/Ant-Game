@@ -90,7 +90,8 @@ class Game {
     Pos move_target_for_ant(const Ant &ant) const;
     void teleport_ants();
     void drift_items();
-    std::pair<int, int> random_own_half_target(int player);
+    std::pair<int, int> random_bewitch_target(const Ant &ant);
+    int half_plane_delta(int player, int x, int y) const;
     bool ant_in_own_half(const Ant &ant) const;
     DefenseTower *enemy_tower_at(int player, int x, int y);
     const DefenseTower *enemy_tower_at(int player, int x, int y) const;

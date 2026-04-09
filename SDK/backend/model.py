@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 
 from SDK.utils.constants import (
     ANT_AGE_LIMIT,
@@ -209,7 +210,7 @@ class Ant:
         if self.x == base_x and self.y == base_y:
             self.status = AntStatus.SUCCESS
             return
-        if self.age > ANT_AGE_LIMIT:
+        if self.kind != AntKind.COMBAT and self.age > ANT_AGE_LIMIT:
             self.status = AntStatus.TOO_OLD
             return
         if self.frozen:
@@ -307,13 +308,8 @@ class Tower:
         return target in TOWER_UPGRADE_TREE.get(self.tower_type, ())
 
     def upgrade(self, target: TowerType) -> None:
-        previous_max_hp = self.max_hp
-        previous_hp = max(0, self.hp)
         self.tower_type = target
-        if previous_max_hp > 0:
-            self.hp = max(1, int(round(self.max_hp * previous_hp / previous_max_hp)))
-        else:
-            self.hp = self.max_hp
+        self.hp = self.max_hp
         self.reset_cooldown()
 
     def downgrade_or_destroy(self) -> bool:
@@ -323,7 +319,7 @@ class Tower:
         previous_hp = max(0, self.hp)
         self.tower_type = TowerType(self.tower_type.value // 10)
         if previous_max_hp > 0:
-            self.hp = max(1, int(round(self.max_hp * previous_hp / previous_max_hp)))
+            self.hp = max(1, math.ceil(self.max_hp * previous_hp / previous_max_hp))
         else:
             self.hp = self.max_hp
         self.reset_cooldown()
