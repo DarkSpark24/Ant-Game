@@ -4,6 +4,7 @@ from SDK.training.logging_utils import TrainingLogger
 from SDK.training.policies import MaskedLinearPolicy, PolicyStep
 from SDK.training.alphazero import AlphaZeroSelfPlayTrainer, AlphaZeroTrainerConfig, EpisodeSummary, SelfPlayBatch, SelfPlaySample
 from SDK.training.selfplay import LinearSelfPlayTrainer, TrainerConfig
+from SDK.training.ppo_torch import PPOSelfPlayTrainer, PPOTrainerConfig, PPOEpisodeSummary, PPORolloutBatch
 
 __all__ = [
     "AlphaZeroSelfPlayTrainer",
@@ -15,6 +16,10 @@ __all__ = [
     "LinearSelfPlayTrainer",
     "MaskedLinearPolicy",
     "PolicyStep",
+    "PPOEpisodeSummary",
+    "PPORolloutBatch",
+    "PPOSelfPlayTrainer",
+    "PPOTrainerConfig",
     "SelfPlayBatch",
     "SelfPlaySample",
     "TrainingLogger",

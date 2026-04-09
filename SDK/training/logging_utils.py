@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
+import csv
 import json
 import logging
 from pathlib import Path
@@ -26,7 +27,11 @@ class TrainingLogger:
         self.events_path = self.run_dir / "events.jsonl"
         self.summary_path = self.run_dir / "summary.json"
         self.config_path = self.run_dir / "config.json"
+        self.metrics_csv_path = self.run_dir / "metrics.csv"
+        self.curves_png_path = self.run_dir / "curves.png"
         self._events_fp = self.events_path.open("a", encoding="utf-8")
+        self._batch_metrics: list[dict[str, Any]] = []
+        self._plot_warning_emitted = False
         self.logger = self._build_logger()
 
     def _allocate_run_dir(self, stem: str) -> Path:
@@ -92,22 +97,99 @@ class TrainingLogger:
         )
 
     def log_batch_metrics(self, batch_index: int, payload: dict[str, Any]) -> None:
+        row = {
+            "batch_index": batch_index,
+            **payload,
+        }
+        self._batch_metrics.append(row)
+        self._write_metrics_csv()
+        self._write_curves_png()
         self.log_event(
             "batch_metrics",
-            {
-                "batch_index": batch_index,
-                **payload,
-            },
+            row,
         )
         self.logger.info(
-            "batch=%s policy_loss=%.4f value_loss=%.4f entropy=%.4f eval_win_rate=%.4f samples=%s",
+            "batch=%s policy_loss=%.4f value_loss=%.4f entropy=%.4f eval_win_rate=%.4f eval_return=%.4f mean_reward=%.4f samples=%s",
             batch_index,
             float(payload.get("policy_loss", 0.0)),
             float(payload.get("value_loss", 0.0)),
             float(payload.get("entropy", 0.0)),
             float(payload.get("eval_win_rate", 0.0)),
+            float(payload.get("eval_return", 0.0)),
+            float(payload.get("mean_reward", 0.0)),
             payload.get("samples"),
         )
+
+    def _write_metrics_csv(self) -> None:
+        if not self._batch_metrics:
+            return
+        fieldnames = sorted({key for row in self._batch_metrics for key in row.keys()})
+        with self.metrics_csv_path.open("w", encoding="utf-8", newline="") as fp:
+            writer = csv.DictWriter(fp, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in self._batch_metrics:
+                writer.writerow(row)
+
+    def _write_curves_png(self) -> None:
+        if len(self._batch_metrics) < 1:
+            return
+        try:
+            import matplotlib.pyplot as plt
+        except Exception as exc:
+            if not self._plot_warning_emitted:
+                self._plot_warning_emitted = True
+                message = f"matplotlib unavailable, skip curves.png generation: {exc}"
+                self.logger.warning("%s", message)
+                self.log_event("warning", {"message": message})
+            return
+
+        x_values = [float(row.get("batch_index", idx)) for idx, row in enumerate(self._batch_metrics)]
+
+        def _series(name: str) -> list[float | None]:
+            values: list[float | None] = []
+            for row in self._batch_metrics:
+                if name not in row:
+                    values.append(None)
+                    continue
+                try:
+                    values.append(float(row[name]))
+                except (TypeError, ValueError):
+                    values.append(None)
+            return values
+
+        tracked = [
+            ("mean_reward", "mean_reward"),
+            ("eval_return", "eval_return"),
+            ("policy_loss", "policy_loss"),
+            ("value_loss", "value_loss"),
+            ("entropy", "entropy"),
+        ]
+
+        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+        axes = axes.reshape(-1)
+        panels = [
+            ("Reward", ["mean_reward", "eval_return"]),
+            ("Policy", ["policy_loss"]),
+            ("Value", ["value_loss"]),
+            ("Entropy", ["entropy"]),
+        ]
+        for axis, (title, names) in zip(axes, panels):
+            for name in names:
+                values = _series(name)
+                pairs = [(x, y) for x, y in zip(x_values, values) if y is not None]
+                if not pairs:
+                    continue
+                xs, ys = zip(*pairs)
+                label = dict(tracked).get(name, name)
+                axis.plot(xs, ys, marker="o", label=label)
+            axis.set_title(title)
+            axis.set_xlabel("batch")
+            axis.grid(True, alpha=0.35)
+            if axis.lines:
+                axis.legend()
+        fig.tight_layout()
+        fig.savefig(self.curves_png_path, dpi=140)
+        plt.close(fig)
 
     def log_checkpoint(self, batch_index: int, checkpoint_path: str | Path) -> None:
         payload = {

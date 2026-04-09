@@ -5,6 +5,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
+
 from AI.ai_example import AI as ExampleAI
 from SDK.backend import GameState
 
@@ -120,3 +122,45 @@ def test_train_mcts_script_writes_logs(tmp_path: Path) -> None:
     assert (run_dir / "events.jsonl").exists()
     assert (run_dir / "summary.json").exists()
     assert (run_dir / "train.log").exists()
+
+
+def test_train_ppo_script_runs_short_smoke(tmp_path: Path) -> None:
+    pytest.importorskip("torch")
+    log_root = tmp_path / "logs"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "SDK/train_ppo.py",
+            "--episodes",
+            "1",
+            "--batches",
+            "1",
+            "--ppo-epochs",
+            "1",
+            "--minibatch-size",
+            "32",
+            "--max-rounds",
+            "4",
+            "--seed",
+            "7",
+            "--evaluation-episodes",
+            "1",
+            "--log-dir",
+            str(log_root),
+            "--run-name",
+            "smoke",
+            "--device",
+            "cpu",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(completed.stdout)
+    run_dir = Path(payload["log_dir"])
+    assert run_dir == log_root / "smoke"
+    assert (run_dir / "config.json").exists()
+    assert (run_dir / "events.jsonl").exists()
+    assert (run_dir / "summary.json").exists()
+    assert (run_dir / "train.log").exists()
+    assert (run_dir / "metrics.csv").exists()

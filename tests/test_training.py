@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from SDK.training import AntWarParallelEnv
 from SDK.training.base import BaseSelfPlayTrainer
+from SDK.training.ppo_torch import PPOTrainerConfig, PPOSelfPlayTrainer
 from SDK.training.selfplay import LinearSelfPlayTrainer, TrainerConfig
 
 
@@ -46,3 +48,30 @@ def test_linear_selfplay_trainer_runs_one_batch() -> None:
     assert not np.allclose(before, after)
     metrics = trainer.evaluate_policy(1)
     assert "eval_return" in metrics
+
+
+def test_ppo_selfplay_trainer_updates_parameters() -> None:
+    pytest.importorskip("torch")
+    trainer = PPOSelfPlayTrainer(
+        lambda seed=0: AntWarParallelEnv(seed=seed),
+        PPOTrainerConfig(
+            batches=1,
+            episodes=1,
+            ppo_epochs=1,
+            minibatch_size=32,
+            max_rounds=4,
+            seed=9,
+            checkpoint_path="checkpoints/test_ppo_latest.pt",
+            evaluation_episodes=1,
+            device="cpu",
+        ),
+    )
+    before = {name: tensor.detach().clone() for name, tensor in trainer.model.state_dict().items()}
+    history, _ = trainer.train(1)
+    after = trainer.model.state_dict()
+    changed = any(not np.allclose(before[name].cpu().numpy(), after[name].cpu().numpy()) for name in before)
+    assert changed
+    assert history
+    latest = history[-1]
+    for key in ("policy_loss", "value_loss", "entropy", "mean_reward", "eval_return"):
+        assert key in latest

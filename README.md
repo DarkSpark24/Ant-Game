@@ -556,22 +556,31 @@ bash AI/zip_example.sh
 
 #### 6.3 训练脚本入口
 
-SDK 根目录下公开了两个训练示例：
+SDK 根目录下公开了三个训练示例：
 
 - [SDK/train_example.py](./SDK/train_example.py) / [SDK/train_example.sh](./SDK/train_example.sh)
 - [SDK/train_mcts.py](./SDK/train_mcts.py) / [SDK/train_mcts.sh](./SDK/train_mcts.sh)
+- [SDK/train_ppo.py](./SDK/train_ppo.py) / [SDK/train_ppo.sh](./SDK/train_ppo.sh)
 
 其中：
 
 - `train_example`：最小示例，展示如何从 `SDK.backend` 和 `SDK.training` 接入框架
 - `train_mcts`：MCTS 自对弈脚手架，展示如何收集对局并在后续加入参数更新逻辑
+- `train_ppo`：基于 PyTorch 的 PPO 自对弈训练脚本，不依赖决策树搜索，支持 GPU（CUDA）训练
 
 运行示例：
 
 ```bash
 bash SDK/train_example.sh --seed 1 --max-actions 16
 bash SDK/train_mcts.sh --episodes 2 --iterations 24 --max-depth 3 --seed 1
+bash SDK/train_ppo.sh --batches 3 --episodes 2 --max-rounds 64 --seed 1
 ```
+
+`train_ppo` 运行后会在 `--log-dir/--run-name` 下输出：
+
+- `train.log` / `events.jsonl`：过程日志与结构化事件
+- `metrics.csv`：每个 batch 的关键指标（如 loss / reward / entropy）
+- `curves.png`：训练曲线图（reward 与损失）
 
 参考实现：
 
